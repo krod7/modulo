@@ -335,3 +335,19 @@ AI-assisted tools used by Kaleb for coding and documentation help:
 | Claude | claude.ai |
 | Manus (Manus Studio) | manus.im |
 | Cursor (for the time being) | cursor.com |
+
+## 16. Installer and releases
+
+Teammates and users install Modulo with `ModuloSetup.exe` (Windows) or the Mac/Linux installer scripts. It installs Python, the packages in `requirements.txt`, Tesseract, and a desktop icon. Files live in `installer/`, `assets/`, `modulo_launcher.py`, and the `Install Modulo (...)` scripts in the repo root.
+
+**Automatic checks:** `.github/workflows/ci.yml` runs `pytest` on every PR and checks that the installer builds. This is informational unless a required status check is added to the `main` rule (section 14).
+
+**Releasing a new installer (Kaleb):**
+1. In a PR, bump `VERSION` (for example `1.0.0` to `1.1.0`) and merge it.
+2. `git switch main && git pull && git tag v$(cat VERSION) && git push origin v$(cat VERSION)`.
+3. GitHub Actions builds `ModuloSetup.exe` and `Modulo-Installer.zip` and publishes them on the **Releases** page. The release fails if the tag does not match `VERSION`.
+4. Teammates download `ModuloSetup.exe` and run it. Running it over an existing install updates it in place.
+
+Build locally instead: `pip install ziglang && python installer/build_windows_exe.py` writes `dist/ModuloSetup.exe`.
+
+Repo admin one-time setting: *Settings -> Actions -> General -> Workflow permissions -> Read and write*, so releases can be published. Never move or delete the `v1.0` tag; release tags use the same `v*` pattern, so use new version numbers only.

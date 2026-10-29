@@ -1,0 +1,4 @@
+-r requirements.txt
+pyinstaller>=6.0
+pywebview>=5.0
+waitress>=3.0

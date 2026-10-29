@@ -1,0 +1,21 @@
+MODULO - ONE-CLICK INSTALL
+==========================
+1. Extract this whole zip somewhere (e.g. your Downloads folder).
+2. Double-click the installer for your system:
+     Windows : "Install Modulo (Windows).bat"
+     Mac     : "Install Modulo (Mac).command"   (right-click > Open the first time)
+     Linux   : "Install Modulo (Linux).sh"
+3. Wait a few minutes. It installs Python (if you don't have it), all required
+   packages, and Tesseract OCR, then puts a "Modulo" icon on your desktop and
+   starts the app.
+
+You only do this once. Afterwards just double-click the Modulo desktop icon.
+You may see one Windows permission prompt (UAC) while Tesseract installs.
+
+Uninstall: run "Uninstall Modulo (Windows).bat" (Mac/Linux: delete the Desktop icon and
+the Modulo folder in Application Support / ~/.local/share).
+Logs: install.log and modulo.log live in the Modulo install folder
+(Windows: %LOCALAPPDATA%\Modulo).
+
+The existing GitHub Actions / PyInstaller / Inno Setup files are still here if you
+later want a single signed ModuloSetup.exe for distribution (see BUILD.md).

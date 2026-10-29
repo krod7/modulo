@@ -1,0 +1,63 @@
+name: Build native (PyInstaller) packages - optional, manual
+on:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-build.txt
+      - name: Get Tesseract (UB Mannheim build) into vendor/tesseract
+        shell: pwsh
+        run: |
+          choco install tesseract -y --no-progress
+          New-Item -ItemType Directory -Force vendor | Out-Null
+          Copy-Item "C:\Program Files\Tesseract-OCR" vendor\tesseract -Recurse
+      - run: pyinstaller modulo.spec --noconfirm
+      - run: choco install innosetup -y --no-progress
+      - run: iscc installer\modulo.iss
+      - uses: actions/upload-artifact@v4
+        with: { name: ModuloSetup-windows, path: dist/ModuloSetup.exe }
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-build.txt
+      - name: Bundle Tesseract + its dylibs
+        run: |
+          brew install tesseract dylibbundler
+          mkdir -p vendor/tesseract/tessdata
+          cp "$(brew --prefix)/bin/tesseract" vendor/tesseract/
+          cp "$(brew --prefix)/share/tessdata/"{eng,osd}.traineddata vendor/tesseract/tessdata/
+          dylibbundler -od -b -x vendor/tesseract/tesseract -d vendor/tesseract/ -p @executable_path/
+      - run: pyinstaller modulo.spec --noconfirm
+      - run: |
+          brew install create-dmg
+          create-dmg --volname Modulo dist/Modulo.dmg dist/Modulo.app || hdiutil create -volname Modulo -srcfolder dist/Modulo.app -ov dist/Modulo.dmg
+      - uses: actions/upload-artifact@v4
+        with: { name: Modulo-macos, path: dist/Modulo.dmg }
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update && sudo apt-get install -y tesseract-ocr libgirepository1.0-dev gir1.2-webkit2-4.1 || true
+      - run: pip install -r requirements.txt pyinstaller
+      - name: Bundle Tesseract
+        run: |
+          mkdir -p vendor/tesseract/tessdata
+          cp "$(which tesseract)" vendor/tesseract/
+          cp /usr/share/tesseract-ocr/*/tessdata/{eng,osd}.traineddata vendor/tesseract/tessdata/
+          ldd vendor/tesseract/tesseract | awk '/=> \//{print $3}' | grep -E 'tesseract|lept|archive|png|jpeg|tiff|webp|openjp|gif|Lerc|zstd|lzma|jbig|deflate|sharpyuv' | xargs -I{} cp -L {} vendor/tesseract/
+      - run: pyinstaller modulo.spec --noconfirm && tar -C dist -czf dist/Modulo-linux.tar.gz Modulo
+      - uses: actions/upload-artifact@v4
+        with: { name: Modulo-linux, path: dist/Modulo-linux.tar.gz }
+

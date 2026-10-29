@@ -19,7 +19,8 @@ from backend.models import AnalysisResponse
 from backend import pipeline
 from backend.services.intake_service import UploadError, inspect_upload
 
-ROOT = Path(__file__).resolve().parents[1]
+# In a PyInstaller bundle, bundled data lives under sys._MEIPASS.
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
 
 
 def create_app(settings: Settings | None = None) -> Flask:
@@ -54,6 +55,12 @@ def create_app(settings: Settings | None = None) -> Flask:
     @app.get("/")
     def index():
         return send_from_directory(ROOT / "frontend", "index.html")
+
+    @app.post("/api/ping")
+    def ping():
+        import time
+        app.extensions["last_ping"] = time.time()
+        return "", 204
 
     @app.get("/manus-routes.json")
     def routes():
