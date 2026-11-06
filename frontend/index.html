@@ -10,15 +10,18 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="manifest" href="/icons/site.webmanifest">
 <meta name="theme-color" content="#07162F">
-<link rel="stylesheet" href="/css/styles.css?v=flowchart-panel-4">
-<script type="module" src="/js/app.js?v=flowchart-panel-4">
+<link rel="stylesheet" href="/css/styles.css?v=flowchart-panel-5">
+<script type="module" src="/js/app.js?v=flowchart-panel-5">
 </script>
 </head>
 <body>
 <a class="skip-link" href="#workspace">Skip to workspace</a>
 <header class="header">
+<div class="header-inner">
+<div class="header-lead">
 <a class="brand" href="/" aria-label="Modulo home">Modulo</a>
 <span class="header-context">Flowchart workspace</span>
+</div>
 <ol class="trail" aria-label="Conversion progress">
 <li id="step-upload" aria-current="step"><span class="trail-dot" aria-hidden="true">1</span>Import</li>
 <li id="step-review"><span class="trail-dot" aria-hidden="true">2</span>Review</li>
@@ -27,22 +30,21 @@
 <div class="header-tools">
 <button id="help-button" class="button quiet">Diagram guide</button>
 <button id="theme-button" class="button quiet theme-toggle" aria-pressed="false">Dark theme</button>
-<button id="fullscreen-button" class="button quiet icon-button" type="button" aria-pressed="false" aria-label="Full screen" title="Full screen (F11)">
-<svg class="icon-expand" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-<svg class="icon-collapse" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-</button>
+</div>
 </div>
 </header>
-<main>
-<h1 class="sr-only">Flowchart workspace</h1>
-<div class="status-row">
+<div class="statusbar">
+<div class="statusbar-inner">
 <p id="status" role="status" aria-live="polite">Choose a file to begin. Your diagram stays on this server.</p>
-</div>
 <div id="progress-wrap" hidden>
 <label id="progress-label" for="progress">Uploading</label>
 <progress id="progress" max="100" value="0">
 </progress>
 </div>
+</div>
+</div>
+<main>
+<h1 class="sr-only">Flowchart workspace</h1>
 <section id="workspace" class="workspace" tabindex="-1" aria-label="Analysis workspace">
 <article id="diagram-panel" class="panel diagram-panel" role="region" aria-labelledby="upload-heading" aria-describedby="drop-instruction">
 <header class="panel-heading">
@@ -165,6 +167,7 @@
 <dt>Small circle</dt>
 <dd>Exactly two circles with the same connector label.</dd>
 </dl>
+<p>Tip: press <kbd>F11</kbd> to toggle full screen; <kbd>Esc</kbd> leaves it.</p>
 <p>If recognition is uncertain, fix the source and upload again. Modulo does not guess missing directions or labels.</p>
 <p><strong>Recognition details:</strong> Each recognized element lists its original OCR text, OpenCV shape classification, and Tesseract confidence so you can compare the result with the source diagram before approving it.</p>
 <p>
