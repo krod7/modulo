@@ -646,12 +646,17 @@ def suppress_node_outline_artifacts(mask: np.ndarray, nodes: list[Node]) -> np.n
     if not nodes:
         return mask
     height, width = mask.shape[:2]
-    margin = max(8, min(36, int(round(width * 0.01))))
-    kernel_size = margin * 2 + 1
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
     cleaned = mask.copy()
+    page_margin = max(8, min(36, int(round(width * 0.01))))
     for node in nodes:
         bx, by, bw, bh = node.bbox.to_list()
+        # Retain the established page-scaled cleanup for ordinary/larger
+        # shapes, but cap it for compact nodes. A page-wide safety band can
+        # consume most of a compact node's short side and erase nearby arrowheads.
+        local_margin = max(4, int(round(min(bw, bh) * 0.06)))
+        margin = min(page_margin, local_margin)
+        kernel_size = margin * 2 + 1
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
         x0, y0 = max(0, bx - margin - 2), max(0, by - margin - 2)
         x1, y1 = min(width, bx + bw + margin + 3), min(height, by + bh + margin + 3)
         region = np.zeros((y1 - y0, x1 - x0), np.uint8)

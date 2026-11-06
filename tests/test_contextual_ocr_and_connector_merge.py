@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import pytest
 
 from backend.models import BoundingBox, Edge, FlowGraph, Node, PipelineContext
 from backend.services.vision_service import _reconcile_low_confidence_comparison_thresholds
@@ -45,3 +46,53 @@ def test_arrowhead_pointing_into_existing_connector_recovers_merge_edge():
     assert count == 1
     assert any(edge.source == "n1" and edge.target == "n2" for edge in graph.edges)
     assert any(item.code == "INFERRED_ARROW_TO_CONNECTOR" for item in context.diagnostics)
+
+
+def test_node_outline_cleanup_preserves_arrowheads_near_shape_boundaries():
+    from backend.models import BoundingBox, Node
+    from backend.services.graph_service import suppress_node_outline_artifacts
+
+    mask = np.zeros((240, 1000), dtype=np.uint8)
+    node = Node(
+        "n1", "decision", "ready?", BoundingBox(50, 40, 50, 40),
+        polygon=[(50, 40), (100, 40), (100, 80), (50, 80)],
+    )
+    # A left-facing arrow enters the right edge. Its tip and V are close to
+    # the node boundary, as they commonly are after rasterization.
+    cv2.line(mask, (150, 60), (106, 60), 255, 3)
+    cv2.line(mask, (106, 60), (116, 50), 255, 3)
+    cv2.line(mask, (106, 60), (116, 70), 255, 3)
+    # Include the node outline so the cleanup still has border artifacts to
+    # remove while preserving the nearby external arrowhead.
+    cv2.rectangle(mask, (50, 40), (100, 80), 255, 2)
+
+    cleaned = suppress_node_outline_artifacts(mask, [node])
+    assert cleaned[60, 106] > 0
+    assert np.count_nonzero(cleaned[40:81, 50:101]) < np.count_nonzero(mask[40:81, 50:101])
+
+
+@pytest.mark.skipif(
+    __import__("os").getenv("FLOWCHART_RUN_PIPELINE") != "1",
+    reason="set FLOWCHART_RUN_PIPELINE=1 to run OCR-dependent flowchart regressions",
+)
+def test_countdown_loop_preserves_both_loop_directions_and_exit_branch():
+    from pathlib import Path
+    from backend.config import Settings
+    from backend.pipeline import analyze
+
+    fixture = Path(__file__).parents[1] / "samples" / "countdown.png"
+    result = analyze(fixture.read_bytes(), filename=fixture.name, settings=Settings())
+    actual = {(edge.source, edge.target, edge.label) for edge in result.graph.edges}
+    assert actual == {
+        ("n1", "n2", None),
+        ("n2", "n3", None),
+        ("n3", "n4", "Yes"),
+        ("n4", "n3", None),
+        ("n3", "n5", "No"),
+    }
+    assert not any(
+        item.severity == "error" and item.code in {
+            "AMBIGUOUS_ARROW_DIRECTION", "AMBIGUOUS_CONNECTOR", "DANGLING_ARROW"
+        }
+        for item in result.diagnostics
+    )
