@@ -148,7 +148,7 @@ Type=Application
 Name=Modulo
 Comment=Flowchart to Python
 Exec=\"$RUN\"
-Icon=$APP/assets/modulo.png
+Icon=$APP/assets/modulo-m-icon.svg
 Terminal=false
 Categories=Development;Education;"
   mkdir -p "$HOME/.local/share/applications"

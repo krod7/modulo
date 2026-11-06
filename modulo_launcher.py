@@ -123,16 +123,25 @@ def apply_windows_window_icon(icon_path: Path) -> None:
         user32 = ctypes.windll.user32
         IMAGE_ICON, LR_LOADFROMFILE = 1, 0x0010
         WM_SETICON, ICON_SMALL, ICON_BIG = 0x0080, 0, 1
+        SM_CXICON, SM_CYICON, SM_CXSMICON, SM_CYSMICON = 11, 12, 49, 50
         # pywebview creates its native window asynchronously after webview.start().
         for _ in range(100):
             hwnd = user32.FindWindowW(None, "Modulo")
             if hwnd:
-                icon = user32.LoadImageW(None, str(icon_path), IMAGE_ICON, 0, 0, LR_LOADFROMFILE)
-                if icon:
-                    user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, icon)
-                    user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, icon)
-                    # Keep the HICON alive for the lifetime of the process.
-                    globals()["_MODULO_HICON"] = icon
+                # Ask Windows for the ICO frame that matches each slot (DPI-aware) so the
+                # title bar and taskbar never scale a single bitmap and look blurry.
+                small = user32.LoadImageW(None, str(icon_path), IMAGE_ICON,
+                                          user32.GetSystemMetrics(SM_CXSMICON),
+                                          user32.GetSystemMetrics(SM_CYSMICON), LR_LOADFROMFILE)
+                big = user32.LoadImageW(None, str(icon_path), IMAGE_ICON,
+                                        user32.GetSystemMetrics(SM_CXICON),
+                                        user32.GetSystemMetrics(SM_CYICON), LR_LOADFROMFILE)
+                if small:
+                    user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small)
+                if big:
+                    user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, big)
+                # Keep the HICONs alive for the lifetime of the process.
+                globals()["_MODULO_HICONS"] = (small, big)
                 return
             time.sleep(0.1)
     except Exception:
@@ -177,7 +186,18 @@ def main() -> int:
         )
         if sys.platform == "win32":
             threading.Thread(target=apply_windows_window_icon, args=(icon_path,), daemon=True).start()
-        webview.start()
+        start_kwargs = {}
+        if sys.platform.startswith("linux"):
+            # GTK/Qt windows take their icon from start(); use the scalable SVG so it stays sharp.
+            svg_icon = BASE / "assets" / "modulo-m-icon.svg"
+            if not svg_icon.is_file():
+                svg_icon = Path(__file__).resolve().parent / "assets" / "modulo-m-icon.svg"
+            if svg_icon.is_file():
+                start_kwargs["icon"] = str(svg_icon)
+        try:
+            webview.start(**start_kwargs)
+        except TypeError:  # older pywebview without the icon= argument
+            webview.start()
     except Exception as exc:
         print(f"Native application window failed to start: {exc}", file=sys.stderr, flush=True)
         if sys.platform == "win32":
