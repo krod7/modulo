@@ -4,6 +4,7 @@ import ast
 import networkx as nx
 from backend.models import Edge, FlowGraph, IRNode, Node, PipelineContext
 from backend.notation import FOR, INPUT, normalize_condition, normalize_label
+from backend.services.validation_service import branch_terminal_outputs
 
 class LogicService:
     name = "logic"
@@ -17,6 +18,15 @@ class LogicService:
         for edge in graph.edges:
             if not edge.structural:
                 outgoing.setdefault(edge.source, []).append(edge)
+        # An output that finishes a decision branch has no drawn arrow.  Join it to
+        # the single End *for structuring only*: this lets both branches reconverge
+        # at End (IF/ELSE ... END) without adding a connector to graph.edges.  With
+        # several End terminals there is no unambiguous join, so it stays a plain
+        # branch exit.
+        if len(graph.end_ids) == 1:
+            for node_id in sorted(branch_terminal_outputs(graph)):
+                if not outgoing.get(node_id):
+                    outgoing[node_id] = [Edge(f"implicit_{node_id}_end", node_id, graph.end_ids[0])]
         for edge_list in outgoing.values():
             edge_list.sort(key=lambda edge: (normalize_label(edge.label) or "", edge.id))
         reachable = nx.DiGraph()
@@ -44,41 +54,78 @@ class LogicService:
         return context
 
     def _postdominators(self, graph: nx.DiGraph, ends: set[str]) -> dict[str, set[str]]:
-        reverse = graph.reverse(copy=True)
+        """Return the nodes that every path from each node must visit.
+
+        A synthetic exit joins all declared End terminals.  The fixed-point
+        calculation runs over the original graph's successors (not its reverse),
+        which is essential for finding real branch reconvergence points.
+        """
         sink = "__synthetic_end__"
-        reverse.add_node(sink)
+        working = graph.copy()
+        working.add_node(sink)
         for end in ends:
-            reverse.add_edge(sink, end)
-        result = {node: set(reverse.nodes) for node in reverse.nodes}
-        result[sink] = {sink}
+            if end in working:
+                working.add_edge(end, sink)
+
+        universe = set(working.nodes)
+        result = {node: ({sink} if node == sink else set(universe)) for node in working}
         changed = True
         while changed:
             changed = False
-            for node in sorted(set(reverse.nodes) - {sink}):
-                successors = list(reverse.successors(node))
-                if not successors:
-                    new = {node}
+            # Reverse lexical order is deterministic; convergence does not rely
+            # on this ordering, including for cyclic flow graphs.
+            for node in sorted(universe - {sink}, reverse=True):
+                successors = list(working.successors(node))
+                if successors:
+                    common = set.intersection(*(result[target] for target in successors))
+                    updated = {node} | common
                 else:
-                    new = {node} | set.intersection(*(result[successor] for successor in successors))
-                if new != result[node]:
-                    result[node] = new; changed = True
+                    updated = {node}
+                if updated != result[node]:
+                    result[node] = updated
+                    changed = True
         return result
 
     def _merge(self, node_id, edges, post, stop, ids):
-        """Find the earliest node reachable from both labeled branch targets."""
+        """Find the nearest common postdominator of the branch destinations.
+
+        Reachability alone is insufficient: two branches may both eventually
+        reach End while first reconverging at an earlier node.  Choosing that
+        earliest mandatory merge keeps nested and sequential decisions scoped
+        to their own regions.  ``stop`` remains the outer-region fallback.
+        """
+        if len(edges) < 2:
+            return stop
+
         def distances(start):
-            found={start:0}; queue=[start]
+            found = {start: 0}
+            queue = [start]
             while queue:
-                current=queue.pop(0)
+                current = queue.pop(0)
                 for target in self._forward.get(current, ()):
                     if target not in found:
-                        found[target]=found[current]+1; queue.append(target)
+                        found[target] = found[current] + 1
+                        queue.append(target)
             return found
-        reach=[distances(edge.target) for edge in edges]
-        candidates=set(reach[0]).intersection(*reach[1:])
-        if stop in candidates: return stop
+
+        reach = [distances(edge.target) for edge in edges]
+        common_postdominators = set.intersection(
+            *(post.get(edge.target, set()) for edge in edges)
+        )
+        candidates = common_postdominators.intersection(*(set(item) for item in reach))
         candidates.discard(node_id)
-        return min(candidates, key=lambda item:(max(mapping[item] for mapping in reach),item)) if candidates else stop
+        if not candidates:
+            return stop
+        # Prefer the merge reached soonest by the slowest branch. Sum and node
+        # id provide stable tie-breakers for diagrams with equal-length routes.
+        return min(
+            candidates,
+            key=lambda item: (
+                max(mapping[item] for mapping in reach),
+                sum(mapping[item] for mapping in reach),
+                item,
+            ),
+        )
 
     def _sequence(self, current, stop, nodes, outgoing, graph, dominators, post, emitted, context):
         result = []

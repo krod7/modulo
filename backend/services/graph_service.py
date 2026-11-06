@@ -136,6 +136,40 @@ def distance_to_path(point: tuple[float, float], path: list[tuple[int, int]]) ->
     return min(distances, default=math.inf)
 
 
+def route_has_visible_stroke(
+    mask: np.ndarray,
+    route: list[tuple[int, int]],
+    *,
+    min_coverage: float = 0.35,
+    min_segments: int = 1,
+    radius: int = 3,
+) -> bool:
+    """Check that a proposed connector follows visible ink, not just layout.
+
+    Samples each meaningful route segment while tolerating small raster gaps,
+    antialiasing, and text interruptions. Every checked segment must have
+    sufficient nearby stroke evidence; a single unrelated pixel is not enough.
+    """
+    coverages = []
+    for first, second in zip(route, route[1:]):
+        length = math.dist(first, second)
+        if length < 18:
+            continue
+        steps = max(2, int(math.ceil(length / 6)))
+        hits = 0
+        checked = 0
+        for index in range(1, steps):
+            ratio = index / steps
+            px = int(round(first[0] + (second[0] - first[0]) * ratio))
+            py = int(round(first[1] + (second[1] - first[1]) * ratio))
+            x0, x1 = max(0, px - radius), min(mask.shape[1], px + radius + 1)
+            y0, y1 = max(0, py - radius), min(mask.shape[0], py + radius + 1)
+            checked += 1
+            hits += int(bool(np.any(mask[y0:y1, x0:x1])))
+        coverages.append(hits / max(1, checked))
+    return len(coverages) >= min_segments and min(coverages, default=0.0) >= min_coverage
+
+
 def bridge_aligned_connector_gaps(mask: np.ndarray, nodes: list[Node]) -> np.ndarray:
     """Reconnect line fragments separated by erased branch-label text.
 
@@ -147,7 +181,12 @@ def bridge_aligned_connector_gaps(mask: np.ndarray, nodes: list[Node]) -> np.nda
     components = []
     for index in range(1, count):
         x, y, width, height, area = map(int, stats[index])
-        if area < 20 or max(width, height) < 35:
+        if area < 20 or max(width, height) < 18:
+            continue
+        # Admit short connector remnants only when they remain shaft-like;
+        # this captures short post-label fragments without treating ordinary
+        # OCR glyph clusters as bridge candidates.
+        if max(width, height) < 35 and min(width, height) > 20:
             continue
         components.append((index, x, y, width, height, area))
     result = mask.copy()
@@ -301,6 +340,21 @@ def infer_obvious_missing_branch_to_end(context: PipelineContext, graph: FlowGra
         start = (sx + sw, sy + sh // 2)
         finish = (ex + ew, ey + eh // 2)
         route = [start, (route_x, start[1]), (route_x, finish[1]), finish]
+
+        # Topology alone cannot establish that a connector exists. In particular,
+        # two mutually exclusive outputs may intentionally have different
+        # continuations (or one may be unfinished); reaching End on the sibling
+        # is not evidence for drawing a second edge. Require visible connector
+        # ink along the proposed orthogonal route before recovering it.
+        stroke_mask = context.stroke_mask
+        if stroke_mask is None:
+            continue
+
+        if not route_has_visible_stroke(
+            stroke_mask, route, min_coverage=0.35, min_segments=2
+        ):
+            continue
+
         edge = Edge(f"e{len(graph.edges) + 1}", source.id, end.id, points=route)
         graph.edges.append(edge)
         context.arrows.append(Arrow(edge.id, route, finish, source_hint=source.id, target_hint=end.id))
@@ -409,8 +463,6 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
             traced_target = nodes.get(branches[0].target)
             if traced_target is None or traced_target.type not in {"output", "process"}:
                 continue
-            if not reaches_end(traced_target.id, end.id):
-                continue
             dx, dy, dw, dh = decision.bbox.to_list()
             candidates = []
             for candidate in graph.nodes:
@@ -438,14 +490,53 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
             # arbitrary isolated node elsewhere in the diagram.
             sx, sy, sw, sh = decision.bbox.to_list()
             tx, ty, tw, th = target.bbox.to_list()
-            if tx + tw / 2 >= sx + sw / 2:
-                start = (sx + sw, sy + sh // 2)
-                route_x = min(width - 3, max(sx + sw + 18, tx + tw // 2))
+            decision_cx, decision_cy = sx + sw / 2, sy + sh / 2
+            target_cx, target_cy = tx + tw / 2, ty + th / 2
+            polygon = np.asarray(decision.polygon or [], dtype=float)
+
+            def polygon_anchor(side: str) -> tuple[int, int]:
+                if len(polygon) >= 3:
+                    if side == "bottom":
+                        extreme = float(polygon[:, 1].max())
+                        selected = polygon[polygon[:, 1] >= extreme - 2]
+                        point = (float(np.median(selected[:, 0])), extreme)
+                    elif side == "right":
+                        extreme = float(polygon[:, 0].max())
+                        selected = polygon[polygon[:, 0] >= extreme - 2]
+                        point = (extreme, float(np.median(selected[:, 1])))
+                    else:
+                        extreme = float(polygon[:, 0].min())
+                        selected = polygon[polygon[:, 0] <= extreme + 2]
+                        point = (extreme, float(np.median(selected[:, 1])))
+                    return int(round(point[0])), int(round(point[1]))
+                if side == "bottom":
+                    return int(round(decision_cx)), sy + sh
+                if side == "right":
+                    return sx + sw, int(round(decision_cy))
+                return sx, int(round(decision_cy))
+
+            vertical_branch = (
+                target_cy > decision_cy
+                and abs(target_cx - decision_cx) <= 0.35 * min(sw, tw)
+            )
+            if vertical_branch:
+                start = polygon_anchor("bottom")
+                finish = (int(round(target_cx)), ty)
+            elif target_cx >= decision_cx:
+                start = polygon_anchor("right")
+                finish = (tx, int(round(target_cy)))
             else:
-                start = (sx, sy + sh // 2)
-                route_x = max(2, min(sx - 18, tx + tw // 2))
-            finish = (int(round(tx + tw / 2)), ty)
-            route = [start, (route_x, start[1]), (route_x, max(start[1] + 1, ty - 18)), finish]
+                start = polygon_anchor("left")
+                finish = (tx + tw, int(round(target_cy)))
+            route = [start, finish]
+
+            # A unique downstream candidate is not enough: the proposed
+            # connection must also follow visible connector ink in the image.
+            if context.stroke_mask is None or not route_has_visible_stroke(
+                context.stroke_mask, route, min_coverage=0.35, min_segments=1
+            ):
+                continue
+
             edge = Edge(f"e{len(graph.edges) + 1}", decision.id, target.id, points=route)
             graph.edges.append(edge)
             context.arrows.append(Arrow(edge.id, route, finish, source_hint=decision.id, target_hint=target.id))
@@ -704,6 +795,22 @@ class GraphService:
                 int(round(mask.shape[1] * 0.05)),
             )
             ports = contacts(points, graph.nodes, mask.shape, attach_distance)
+            # A branch label can become part of the same raster component as a
+            # recovered shaft. Its glyphs may create extra near-boundary
+            # contacts on the destination node. When that node has exactly one
+            # arrowhead-backed contact, prefer that endpoint over non-arrowhead
+            # text contacts; retain all contacts when direction is not unique.
+            ports_by_node = defaultdict(list)
+            for port in ports:
+                ports_by_node[port.node.id].append(port)
+            filtered_ports = []
+            for node_ports in ports_by_node.values():
+                head_ports = [port for port in node_ports if port.head]
+                if len(node_ports) > 1 and len(head_ports) == 1:
+                    filtered_ports.append(head_ports[0])
+                else:
+                    filtered_ports.extend(node_ports)
+            ports = sorted(filtered_ports, key=lambda port: (port.point[1], port.point[0], port.node.id))
             # Node-border cleanup can leave a visible connector tip just beyond
             # the normal attachment band. Expand only when the observed stroke
             # currently touches exactly one node and the second contact is a
@@ -949,11 +1056,11 @@ class GraphService:
                             abs(target_nodes[edge.target].bbox.center[0] - center_x)]
                 horizontal = [edge for edge, x in positions if edge not in vertical]
                 if len(vertical) == len(horizontal) == 1:
-                    horizontal_target = target_nodes.get(horizontal[0].target)
-                    if horizontal_target and horizontal_target.bbox.center[0] > center_x:
-                        horizontal[0].label, vertical[0].label = "True", "False"
-                    else:
-                        vertical[0].label, horizontal[0].label = "True", "False"
+                    # With OCR unavailable, use the conventional
+                    # vertical-continuation / lateral-exit mapping. Keep this
+                    # explicitly warning-tagged: geometry is a fallback, not
+                    # evidence that overrides a recognized branch label.
+                    vertical[0].label, horizontal[0].label = "True", "False"
                     context.diagnose(
                         "warning", "INFERRED_BRANCH_LABELS",
                         "True/False labels were inferred from the decision's vertical-versus-sideways split because label OCR was unavailable.",

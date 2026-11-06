@@ -239,13 +239,15 @@ def test_modulo_even_odd_flowchart_recognizes_nodes_edges_and_decision_text():
     assert nodes["n3"].text == "If Number%2 == 0"
     assert nodes["n4"].text == 'Output "Number is odd"'
     assert nodes["n5"].text == 'Output "number is even"'
-    assert {(edge.source, edge.target, edge.label) for edge in result.graph.edges} == {
-        ("n1", "n2", None),
-        ("n2", "n3", None),
-        ("n3", "n4", "False"),
-        ("n3", "n5", "True"),
-        ("n5", "n6", None),
+    edges = {(edge.source, edge.target): edge.label for edge in result.graph.edges}
+    assert set(edges) == {
+        ("n1", "n2"), ("n2", "n3"), ("n3", "n4"),
+        ("n3", "n5"), ("n5", "n6"),
     }
+    # The connector topology is the invariant; OCR may normalize the visible
+    # True/False labels to Yes/No depending on the local OCR engine.
+    assert edges[("n3", "n4")] in {"False", "No"}
+    assert edges[("n3", "n5")] in {"True", "Yes"}
 
 
 def test_obvious_missing_sibling_branch_to_end_is_inferred_with_review_warning():
@@ -261,7 +263,12 @@ def test_obvious_missing_sibling_branch_to_end_is_inferred_with_review_warning()
         Edge("e2", "n3", "n5", "True", [(150, 180), (150, 220)]),
         Edge("e3", "n5", "n6", None, [(150, 270), (150, 310)]),
     ])
-    context = PipelineContext(elements=graph.nodes, stroke_mask=np.zeros((400, 500), dtype=np.uint8))
+    import cv2
+    stroke_mask = np.zeros((400, 500), dtype=np.uint8)
+    proposed_route = [(340, 135), (358, 135), (358, 335), (200, 335)]
+    for first, second in zip(proposed_route, proposed_route[1:]):
+        cv2.line(stroke_mask, first, second, 255, 3)
+    context = PipelineContext(elements=graph.nodes, stroke_mask=stroke_mask)
     assert infer_obvious_missing_branch_to_end(context, graph)
     assert any((edge.source, edge.target) == ("n4", "n6") for edge in graph.edges)
     assert any(item.code == "INFERRED_BRANCH_TO_END" and item.severity == "warning" for item in context.diagnostics)
@@ -285,7 +292,7 @@ def test_missing_branch_inference_does_not_guess_for_unrelated_or_multiple_ends(
     assert len(graph.edges) == 3
 
 
-def test_modulo_even_odd_flowchart_recovers_likely_missing_output_to_end():
+def test_modulo_even_odd_flowchart_does_not_invent_unshown_output_to_end():
     from pathlib import Path
     from backend.config import Settings
     from backend.pipeline import analyze
@@ -295,9 +302,15 @@ def test_modulo_even_odd_flowchart_recovers_likely_missing_output_to_end():
     nodes = {node.id: node for node in result.elements}
     odd_node = next(node for node in result.elements if "odd" in node.text.casefold())
     end_node = next(node for node in result.elements if node.type == "terminal" and node.text.strip().casefold() == "end")
-    assert any(edge.source == odd_node.id and edge.target == end_node.id for edge in result.graph.edges)
-    assert any(item.code == "INFERRED_BRANCH_TO_END" and item.severity == "warning" for item in result.diagnostics)
-    assert any("OUTPUT \"Number is odd\"" in line.text for line in result.pseudocode)
+    assert not any(edge.source == odd_node.id and edge.target == end_node.id for edge in result.graph.edges)
+    assert not any(item.code == "INFERRED_BRANCH_TO_END" for item in result.diagnostics)
+    # The five actually drawn connectors, including the branch interrupted by
+    # its "True" label, must all be present.
+    assert {(edge.source, edge.target) for edge in result.graph.edges} == {
+        ("n1", "n2"), ("n2", "n3"), ("n3", "n4"), ("n3", "n5"), ("n5", "n6")
+    }
+    recovered = next(edge for edge in result.graph.edges if edge.source == "n3" and edge.target == "n5")
+    assert abs(recovered.points[0][0] - recovered.points[-1][0]) <= 2
     assert len(nodes) == 6
 
 
@@ -314,8 +327,10 @@ def test_factorial_branch_chart_recovers_visible_vertical_and_missing_decision_e
     edges = {(edge.source, edge.target) for edge in result.graph.edges}
     assert {("n1", "n2"), ("n2", "n3"), ("n3", "n4"), ("n3", "n5"),
             ("n4", "n6"), ("n5", "n7"), ("n6", "n7")} <= edges
-    assert any(d.code == "INFERRED_VISIBLE_GAP_CONNECTION" for d in result.diagnostics)
-    assert any(d.code == "INFERRED_DECISION_BRANCH" for d in result.diagnostics)
+    # The short vertical fragments are now stitched before graph extraction,
+    # so this is a traced connector rather than a geometry-only recovery.
+    assert next(edge for edge in result.graph.edges if edge.source == "n5" and edge.target == "n7").points
+    assert any(d.code == "INFERRED_TERMINAL_DIRECTION" for d in result.diagnostics)
     # The Yes/No words overlap the connector strokes in this fixture, so OCR
     # may omit them. Recover labels from the opposite-side departure geometry.
     decision_edges = [edge for edge in result.graph.edges if edge.source == "n3"]
@@ -355,3 +370,43 @@ def test_validation_reconciles_one_missing_decision_label_from_opposite_departur
     assert left_edge.label == "Yes"
     assert right_edge.label == "No"
     assert any(d.code == "INFERRED_BRANCH_LABELS" for d in context.diagnostics)
+
+
+
+def test_short_vertical_connector_fragments_are_stitched_across_branch_label():
+    import cv2
+    from backend.models import BoundingBox, Node
+    from backend.services.graph_service import bridge_aligned_connector_gaps
+
+    mask = np.zeros((280, 200), dtype=np.uint8)
+    cv2.line(mask, (100, 30), (100, 100), 255, 5)
+    # The lower shaft is shorter than the former 35-pixel component cutoff.
+    cv2.line(mask, (101, 140), (101, 168), 255, 5)
+    # A detached OCR label occupies the gap but must not be mistaken for a
+    # connector endpoint or prevent the two aligned shaft fragments joining.
+    cv2.putText(mask, "True", (55, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 255, 1)
+    node = Node("n1", "process", "A", BoundingBox(20, 10, 20, 20))
+    repaired = bridge_aligned_connector_gaps(mask, [node])
+    count, labels = cv2.connectedComponents(repaired, connectivity=8)
+    assert labels[80, 100] != 0
+    assert labels[155, 101] == labels[80, 100]
+
+
+def test_missing_branch_to_end_requires_visible_connector_ink():
+    from backend.models import BoundingBox, Edge, FlowGraph, Node, PipelineContext
+    from backend.services.graph_service import infer_obvious_missing_branch_to_end
+
+    decision = Node("n1", "decision", "x > 0", BoundingBox(100, 80, 80, 60))
+    connected = Node("n2", "output", "positive", BoundingBox(210, 110, 70, 40))
+    dangling = Node("n3", "output", "negative", BoundingBox(210, 180, 70, 40))
+    end = Node("n4", "terminal", "End", BoundingBox(100, 260, 80, 40))
+    graph = FlowGraph(nodes=[decision, connected, dangling, end], edges=[
+        Edge("e1", "n1", "n2"), Edge("e2", "n2", "n4")
+    ])
+    context = PipelineContext(elements=graph.nodes, graph=graph,
+                              stroke_mask=np.zeros((340, 340), dtype=np.uint8))
+
+    assert infer_obvious_missing_branch_to_end(context, graph) is False
+    assert {(edge.source, edge.target) for edge in graph.edges} == {
+        ("n1", "n2"), ("n2", "n4")
+    }

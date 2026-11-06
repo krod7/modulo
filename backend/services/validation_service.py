@@ -72,6 +72,34 @@ def _reconcile_decision_labels(context: PipelineContext) -> None:
         )
 
 
+def branch_terminal_outputs(graph) -> set[str]:
+    """Return output shapes that legitimately finish a decision branch.
+
+    A flowchart branch may end on its last action (for example, ``Print "odd"``)
+    without a further arrow to End.  Such a shape qualifies only when it is an
+    output, has no outgoing connector, is itself reachable, and sits downstream
+    of a decision/iteration, so a real branch ends there.  Every other
+    non-terminal shape keeps the strict one-outgoing-arrow rule, and a missing
+    connector is never fabricated: the graph is left untouched, and later stages
+    treat the shape as the end of that branch.
+    """
+    if graph is None:
+        return set()
+    nodes = {node.id: node for node in graph.nodes}
+    directed = nx.DiGraph()
+    directed.add_nodes_from(nodes)
+    for edge in graph.edges:
+        if edge.source in nodes and edge.target in nodes:
+            directed.add_edge(edge.source, edge.target)
+    result = set()
+    for node in graph.nodes:
+        if node.type != "output" or directed.out_degree(node.id) or not directed.in_degree(node.id):
+            continue
+        if any(nodes[ancestor].type in ("decision", "iteration") for ancestor in nx.ancestors(directed, node.id)):
+            result.add(node.id)
+    return result
+
+
 class ValidationService:
     name = "validation"
 
@@ -93,6 +121,7 @@ class ValidationService:
             incoming[edge.target].append(edge)
             outgoing[edge.source].append(edge)
             directed.add_edge(edge.source, edge.target)
+        branch_terminals = branch_terminal_outputs(graph)
         starts = [node.id for node in graph.nodes if node.type == "terminal" and node.text.strip().casefold() == "start"]
         ends = [node.id for node in graph.nodes if node.type == "terminal" and node.text.strip().casefold() == "end"]
         graph.start_id = starts[0] if len(starts) == 1 else None
@@ -125,6 +154,13 @@ class ValidationService:
                     context.diagnose("error", "DECISION_MISSING_BRANCH", f"{node.id} needs exactly two outgoing branches.", "Draw two outgoing arrows labeled Yes and No.", [node.id] + [edge.id for edge in branches])
                 elif sorted(normalize_label(edge.label) or "" for edge in branches) != ["No", "Yes"]:
                     context.diagnose("error", "INVALID_BRANCH_LABELS", f"{node.id} does not have one Yes and one No branch.", "Label branches Yes/No, True/False, or Y/N. Move labels near their arrows.", [node.id] + [edge.id for edge in branches])
+            elif node.id in branch_terminals:
+                context.diagnose(
+                    "warning", "BRANCH_ENDS_WITHOUT_END",
+                    f"{node.id} finishes its branch but no arrow leaves it, so the branch was treated as ending the flowchart there.",
+                    "If this path should continue to End, draw the missing arrow and re-upload; otherwise no change is needed.",
+                    [node.id],
+                )
             elif len(branches) != 1:
                 context.diagnose("error", "INVALID_OUT_DEGREE", f"{node.id} needs one outgoing arrow.", "Only a decision or iteration may split flow; all other non-End shapes have one next step.", [node.id])
             if node.id in starts and incoming[node.id]:
@@ -138,7 +174,10 @@ class ValidationService:
             if unreachable:
                 context.diagnose("error", "UNREACHABLE_NODE", "Some shapes cannot be reached from Start.", "Connect these shapes to the main flow or remove them.", unreachable)
             can_end = set(ends)
-            for end in ends:
+            # A branch that legitimately finishes on an output completes the flow
+            # just as an End terminal does, along with everything leading to it.
+            for end in [*ends, *branch_terminals]:
+                can_end.add(end)
                 can_end.update(nx.ancestors(directed, end))
             dead = [node.id for node in graph.nodes if node.id in reachable and node.id not in can_end]
             if dead:
