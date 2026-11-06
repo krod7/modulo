@@ -148,6 +148,25 @@ def apply_windows_window_icon(icon_path: Path) -> None:
         pass
 
 
+class WindowApi:
+    """Exposed to the page as window.pywebview.api so it can toggle full screen.
+
+    Underscore-prefixed attributes are not exposed to JavaScript by pywebview.
+    """
+
+    def __init__(self) -> None:
+        self._window = None
+        self._fullscreen = False
+
+    def toggle_fullscreen(self) -> bool:
+        """Switch between the maximized window and true full screen; returns the new state."""
+        if self._window is None:
+            return False
+        self._window.toggle_fullscreen()
+        self._fullscreen = not self._fullscreen
+        return self._fullscreen
+
+
 def main() -> int:
     set_windows_app_identity()
     redirect_output_to_log()
@@ -180,9 +199,11 @@ def main() -> int:
         # pywebview's create_window() does not accept an icon= argument.
         # The executable icon is set by PyInstaller; apply_windows_window_icon()
         # sets the native title-bar/taskbar icons after the window is created.
-        webview.create_window(
+        # Opens maximized (windowed full size); the page's Full screen button / F11 toggles true full screen.
+        window_api = WindowApi()
+        window_api._window = webview.create_window(
             "Modulo", url, width=1280, height=860, min_size=(900, 600),
-            maximized=True,
+            maximized=True, js_api=window_api,
         )
         if sys.platform == "win32":
             threading.Thread(target=apply_windows_window_icon, args=(icon_path,), daemon=True).start()
