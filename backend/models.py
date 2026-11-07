@@ -158,9 +158,9 @@ class AnalysisResponse:
         elif overall_score >= 80:
             grade, label = "B", "Good"
         elif overall_score >= 70:
-            grade, label = "C", "Iffy"
+            grade, label = "C", "Fair"
         elif overall_score >= 60:
-            grade, label = "D", "Risky"
+            grade, label = "D", "Poor"
         else:
             grade, label = "F", "Poor"
         return {"status": status, "analysis_id": self.analysis_id,

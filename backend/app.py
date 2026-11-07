@@ -69,7 +69,7 @@ def create_app(settings: Settings | None = None) -> Flask:
         entries = sorted(
             (path for path in (ROOT / "samples").iterdir()
              if path.is_file() and path.suffix.lower().lstrip(".") in allowed),
-            key=lambda path: path.name,
+            key=lambda path: (path.stem.rstrip('0123456789'), int(''.join(ch for ch in path.stem if ch.isdigit()) or 0), path.suffix.lower()),
         )
         return jsonify(samples=[{"name": path.name, "url": f"/samples/{path.name}",
                                  "bytes": path.stat().st_size,
