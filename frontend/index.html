@@ -4,23 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Analyze your flowchart locally with deterministic vision, OCR, and graph validation.">
-<title>Modulo — Flowchart to code</title>
+<title>Modulo — Flowchart To Code</title>
 <link rel="icon" href="/icons/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="/icons/modulo-m-icon.svg">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="manifest" href="/icons/site.webmanifest">
 <meta name="theme-color" content="#07162F">
-<link rel="stylesheet" href="/css/styles.css?v=flowchart-panel-5">
-<script type="module" src="/js/app.js?v=flowchart-panel-5">
+<link rel="stylesheet" href="/css/styles.css?v=ui-revise-6">
+<script type="module" src="/js/app.js?v=ui-revise-6">
 </script>
 </head>
 <body>
-<a class="skip-link" href="#workspace">Skip to workspace</a>
+<a class="skip-link" href="#workspace">Skip To Workspace</a>
 <header class="header">
 <div class="header-inner">
 <div class="header-lead">
 <a class="brand" href="/" aria-label="Modulo home">Modulo</a>
-<span class="header-context">Flowchart workspace</span>
+<span class="header-context">Flowchart Workspace</span>
 </div>
 <ol class="trail" aria-label="Conversion progress">
 <li id="step-upload" aria-current="step"><span class="trail-dot" aria-hidden="true">1</span>Import</li>
@@ -44,7 +44,7 @@
 </div>
 </div>
 <main>
-<h1 class="sr-only">Flowchart workspace</h1>
+<h1 class="sr-only">Flowchart Workspace</h1>
 <section id="workspace" class="workspace" tabindex="-1" aria-label="Analysis workspace">
 <article id="diagram-panel" class="panel diagram-panel" role="region" aria-labelledby="upload-heading" aria-describedby="drop-instruction">
 <header class="panel-heading">
@@ -75,10 +75,10 @@
 </div>
 </div>
 <div class="upload-actions">
-<button id="analyze-button" class="button primary" type="button" disabled>Analyze flowchart →</button>
-<button id="cancel-button" class="button" type="button" hidden>Cancel request</button>
+<button id="analyze-button" class="button primary" type="button" disabled>Analyze Flowchart →</button>
+<button id="cancel-button" class="button" type="button" hidden>Cancel Request</button>
 </div>
-<footer class="panel-footer">After analysis, hover or focus a recognized shape to inspect it; click to pin its matching pseudocode and Python lines.</footer>
+<footer class="panel-footer">After Analysis, Hover Or Focus A Recognized Shape To Inspect It; Click To Pin Its Matching Pseudocode And Python Lines.</footer>
 </article>
 <article class="panel">
 <header class="panel-heading">
@@ -91,23 +91,23 @@
 <div id="pseudo-empty" class="empty-state">
 <span class="empty-lines" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M10 15h28M10 24h28M10 33h20" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>
 <h3>Review The Recovered Logic</h3>
-<p>Modulo renders this read-only explanation from the validated graph before it generates Python.</p>
+<p>Modulo Renders This Read-Only Explanation From The Validated Graph Before It Generates Python.</p>
 </div>
 <div id="recognition" class="recognition" hidden>
-<h3>Recognized elements</h3>
-<p id="review-hint" class="review-hint" hidden>Only flagged OCR text and branch labels can be edited. Corrections are revalidated before approval.</p>
+<h3>Recognized Elements</h3>
+<p id="review-hint" class="review-hint" hidden>Only Flagged OCR Text And Branch Labels Can Be Edited. Corrections Are Revalidated Before Approval.</p>
 <div id="node-list" class="node-list" aria-label="Recognized pseudocode nodes">
 </div>
 <details>
-<summary>Detected connections</summary>
+<summary>Detected Connections</summary>
 <div id="edge-list">
 </div>
 </details>
 </div>
 <footer class="panel-footer">
-<button id="review-button" class="button action-button" hidden>Edit flagged regions</button>
-<button id="revalidate-button" class="button primary" hidden>Revalidate corrections</button>
-<button id="approve-button" class="button primary" disabled>Approve pseudocode</button>
+<button id="review-button" class="button action-button" hidden>Edit Flagged Regions</button>
+<button id="revalidate-button" class="button primary" hidden>Revalidate Corrections</button>
+<button id="approve-button" class="button primary" disabled>Approve Pseudocode</button>
 </footer>
 </article>
 <article class="panel">
@@ -121,7 +121,7 @@
 <div id="code-empty" class="empty-state">
 <span class="empty-code" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="m18 14-10 10 10 10M30 14l10 10-10 10M27 10 21 38" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
 <h3>Nothing Generated Without You</h3>
-<p>Approve the read-only pseudocode first. Generated text is parsed and syntax-checked, never executed.</p>
+<p>Approve The Read-Only Pseudocode First. Generated Text Is Parsed And Syntax-Checked, Never Executed.</p>
 </div>
 <pre id="code-list" class="code-list" hidden></pre>
 <footer class="panel-footer">
@@ -134,7 +134,8 @@
 <header>
 <div>
 <h2 id="diagnostics-heading">Analysis Notes</h2>
-<p id="diagnostics-summary">Issues will include what happened, where, and how to fix it.</p>
+<p id="diagnostics-summary">Issues Will Include What Happened, Where, And How To Fix It.</p>
+<div id="score-grading" class="score-grading" hidden></div>
 </div>
 <span id="diagnostics-count" class="panel-badge">NO ANALYSIS YET</span>
 </header>
@@ -148,7 +149,7 @@
 </main>
 <dialog id="guide-dialog" aria-labelledby="guide-heading">
 <header>
-<h2 id="guide-heading">A diagram Modulo can read</h2>
+<h2 id="guide-heading">A Diagram Modulo Can Read</h2>
 <button id="close-guide" class="button">Close</button>
 </header>
 <p>Use a single-page diagram with separate shapes, legible text, and visible arrowheads. Digital exports are easiest to read. Photographs and hand-drawn diagrams are supported, but lighting, perspective, paper texture, and handwriting increase the risk of an incorrect interpretation.</p>
@@ -173,5 +174,6 @@
 <p>
 <strong>This build:</strong> intake, vision, graph, validation, logic recovery, pseudocode review, approval, Python generation, and traceability.</p>
 </dialog>
+<div id="shape-note" class="shape-note" hidden role="tooltip"></div>
 </body>
 </html>

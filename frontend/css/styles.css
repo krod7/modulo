@@ -910,6 +910,17 @@ code {
 .recognition-score.risky .score-meter span,.recognition-score.poor .score-meter span { background:var(--error); }
 .score-details { margin:0; font-size:11px; line-height:1.5; }
 .score-details-heading { margin:0 0 10px; font-size:12px; letter-spacing:.1px; }
+.diagnostics header .score-grading {
+  margin:10px 0 0;
+  max-width:52rem;
+}
+.diagnostics header .score-grading p {
+  margin:0;
+  color:var(--text);
+  font-size:12px;
+  font-weight:600;
+  line-height:1.5;
+}
 @media(max-width:1100px) {
   .diagnostic {
     grid-template-columns:64px minmax(200px,1fr) minmax(180px,.9fr);
@@ -1195,6 +1206,22 @@ main { padding-top:20px; }
 .statusbar #progress-wrap { flex:1 1 auto; display:flex; align-items:center; min-width:0; }
 .statusbar #progress-wrap label { flex:none; }
 .statusbar progress { flex:1 1 auto; width:auto; min-width:80px; }
+.statusbar.is-analyzing .statusbar-inner { gap:12px; }
+.statusbar.is-analyzing #progress-wrap {
+  flex:1 1 100%;
+  width:100%;
+  min-height:42px;
+  gap:16px;
+  font-size:13px;
+  font-weight:650;
+  color:var(--text);
+}
+.statusbar.is-analyzing progress {
+  flex:1 1 auto;
+  width:auto;
+  min-width:0;
+  height:10px;
+}
 .diagram-panel.dragging,
 .diagram-panel:not(.has-file):hover,
 .diagram-panel:not(.has-file):focus-within {
@@ -1212,8 +1239,21 @@ main { padding-top:20px; }
 .diagram-panel .empty-state.dragging { border-color:var(--accent); background:var(--accent-soft); }
 .diagram-panel .empty-state { cursor:pointer; }
 #recognition { max-height:100%; }
-.node-overlay.warning { stroke:var(--warning); }
-.node-overlay[data-warning]::after { content:attr(data-warning); }
+.node-overlay.warning { stroke:var(--accent); }
+.shape-note {
+  position:fixed;
+  z-index:40;
+  max-width:280px;
+  padding:8px 10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--surface);
+  color:var(--text);
+  font-size:12px;
+  line-height:1.45;
+  box-shadow:0 8px 24px rgb(0 0 0 / 22%);
+  pointer-events:none;
+}
 .diagnostic {
   appearance:none;
   width:100%;
