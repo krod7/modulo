@@ -7,13 +7,17 @@ import cv2
 import numpy as np
 
 from backend.models import Arrow, Edge, FlowGraph, Node, PipelineContext
-from backend.notation import normalize_label
+from backend.services.connector_geometry import (connector_stroke_width, endpoint_has_arrowhead, ink_mask,
+                                                 stroke_exits)
+from backend.notation import terminal_role, normalize_label
+from backend.services.vision_service import erase_enclosed_components
 
 @dataclass
 class Port:
     node: Node
     point: tuple[int, int]
     head: bool
+    distance: float = 0.0  # closest approach of the stroke to the node polygon
 
 
 def arrowhead_evidence(points: np.ndarray, point: tuple[int, int]) -> bool:
@@ -47,18 +51,35 @@ def arrowhead_evidence(points: np.ndarray, point: tuple[int, int]) -> bool:
     return False
 
 
-def contacts(points: np.ndarray, nodes: list[Node], shape: tuple[int, int], distance: int) -> list[Port]:
+def contacts(points: np.ndarray, nodes: list[Node], shape: tuple[int, int], distance: int, *,
+             stroke_width: float | None = None, head_mask: np.ndarray | None = None,
+             touch_distance: int | None = None) -> list[Port]:
+    """Find where a connector component meets node boundaries.
+
+    With the default arguments this is the original proximity test. When
+    ``touch_distance`` is given, a contact must also be a genuine stroke
+    *termination*: either the stroke comes within ``touch_distance`` of the
+    polygon, or it leaves the contact band through a single exit. A line that
+    merely runs beside a node (two exits) is no longer attached to it. When
+    ``stroke_width`` is given, arrowheads are detected with the localised,
+    scale-aware profile test, using ``head_mask`` to recover arrowhead pixels
+    that node cleanup erased.
+    """
     ports = []
     height, width = shape
+    sw = float(stroke_width or 3)
+    ring_width = int(max(6, round(2 * sw))) if touch_distance is not None else 0
+    band_width = int(round(3 * sw + 6)) if touch_distance is not None else 0
+    reach = distance + band_width + ring_width
     for node in nodes:
         # Distance is measured from the actual polygon, not its enclosing rectangle.
         bx, by, bw, bh = node.bbox.to_list()
-        nearby = points[(points[:, 0] >= bx - distance) & (points[:, 0] <= bx + bw + distance) &
-                        (points[:, 1] >= by - distance) & (points[:, 1] <= by + bh + distance)]
+        nearby = points[(points[:, 0] >= bx - reach) & (points[:, 0] <= bx + bw + reach) &
+                        (points[:, 1] >= by - reach) & (points[:, 1] <= by + bh + reach)]
         if len(nearby) == 0:
             continue
-        x0, y0 = max(0, bx - distance - 3), max(0, by - distance - 3)
-        x1, y1 = min(width, bx + bw + distance + 3), min(height, by + bh + distance + 3)
+        x0, y0 = max(0, bx - reach - 3), max(0, by - reach - 3)
+        x1, y1 = min(width, bx + bw + reach + 3), min(height, by + bh + reach + 3)
         exterior = np.full((y1 - y0, x1 - x0), 255, np.uint8)
         polygon = np.asarray(node.polygon or [(bx, by), (bx + bw, by), (bx + bw, by + bh), (bx, by + bh)], np.int32)
         cv2.fillPoly(exterior, [polygon - np.array([x0, y0])], 0)
@@ -77,12 +98,49 @@ def contacts(points: np.ndarray, nodes: list[Node], shape: tuple[int, int], dist
             d = distances[ys, xs]
             if float(d.min()) > distance:
                 continue
+            if touch_distance is not None and float(d.min()) > touch_distance:
+                if _passes_beside(nearby - np.array([x0, y0]), values, float(d.min()),
+                                  (xs[d <= d.min() + 1.5], ys[d <= d.min() + 1.5]),
+                                  exterior.shape, band_width, ring_width):
+                    continue  # a line running beside the node, not ending at it
             closest = np.column_stack((xs[d <= d.min() + 1.5] + x0, ys[d <= d.min() + 1.5] + y0))
             center = closest.mean(axis=0)
             point_array = closest[np.argmin(np.sum((closest - center) ** 2, axis=1))]
             point = int(point_array[0]), int(point_array[1])
-            ports.append(Port(node, point, arrowhead_evidence(points, point)))
+            head = (endpoint_has_arrowhead(points, point, stroke_width, head_mask)
+                    if stroke_width is not None else arrowhead_evidence(points, point))
+            ports.append(Port(node, point, head, float(d.min())))
     return sorted(ports, key=lambda port: (port.point[1], port.point[0], port.node.id))
+
+
+def _passes_beside(local_points: np.ndarray, values: np.ndarray, closest_distance: float,
+                   closest: tuple[np.ndarray, np.ndarray], shape: tuple[int, int],
+                   band_width: int, ring_width: int) -> bool:
+    """True when the stroke near its closest approach leaves in two or more places.
+
+    The band is anchored at the stroke's own closest distance to the node, so a
+    line running parallel to a side is cut across (two exits) rather than along
+    its length. A connector that ends near the node leaves through one exit.
+    """
+    inner_cut = closest_distance + band_width
+    inner = np.zeros(shape, np.uint8)
+    ring = np.zeros(shape, np.uint8)
+    inside = local_points[values <= inner_cut]
+    shell = local_points[(values > inner_cut) & (values <= inner_cut + ring_width)]
+    inner[inside[:, 1], inside[:, 0]] = 255
+    ring[shell[:, 1], shell[:, 0]] = 255
+    # Only shell pieces that continue through to its outer edge are exits;
+    # arrowhead barbs and glyph specks poke into the shell and stop.
+    outer = np.zeros(shape, np.uint8)
+    far = local_points[(values > inner_cut + ring_width / 2) & (values <= inner_cut + ring_width)]
+    outer[far[:, 1], far[:, 0]] = 255
+    count, labels = cv2.connectedComponents(inner, connectivity=8)
+    anchor = labels[closest[1], closest[0]]
+    anchor = anchor[anchor != 0]
+    if anchor.size == 0:
+        return False
+    own = np.where(np.isin(labels, np.unique(anchor)), 255, 0).astype(np.uint8)
+    return stroke_exits(own, ring, outer) >= 2
 
 
 def stroke_path(points: np.ndarray, start: tuple[int, int], end: tuple[int, int]) -> list[tuple[int, int]]:
@@ -284,6 +342,103 @@ def bridge_aligned_connector_gaps(mask: np.ndarray, nodes: list[Node]) -> np.nda
     return result
 
 
+def node_contains(node: Node, point: tuple[int, int], margin: float = 0.0) -> bool:
+    """Whether ``point`` lies inside, or within ``margin`` of, a node polygon."""
+    bx, by, bw, bh = node.bbox.to_list()
+    polygon = np.asarray(node.polygon or [(bx, by), (bx + bw, by), (bx + bw, by + bh), (bx, by + bh)],
+                         np.float32).reshape(-1, 1, 2)
+    return cv2.pointPolygonTest(polygon, (float(point[0]), float(point[1])), True) >= -margin
+
+
+def bridge_through_labels(mask: np.ndarray, words, nodes: list[Node], stroke_width: int) -> np.ndarray:
+    """Reconnect a connector that a label interrupts ("—Yes→").
+
+    Recognised label boxes are erased from the connector mask so glyphs cannot
+    masquerade as strokes; when a label sits *on* the line this also cuts the
+    connector in two. A bridge is drawn only when stroke ink touches opposite
+    sides of the label box at aligned positions (left/right at the same height
+    or top/bottom at the same column) and the bridge crosses no node.
+    """
+    result = mask.copy()
+    height, width = mask.shape[:2]
+    thickness = max(2, int(stroke_width))
+    node_boxes = [node.bbox.to_list() for node in nodes]
+
+    def crosses_node(a, b) -> bool:
+        # Sample the segment against the node polygons (not their bounding
+        # boxes, which overlap the empty corners beside diamonds).
+        steps = max(2, int(math.dist(a, b) // 4))
+        for i in range(1, steps):
+            t = i / steps
+            px, py = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            if any(node_contains(node, (px, py), -2.0) for node in nodes):
+                return True
+        return False
+
+    for word in words:
+        if not any(character.isalnum() for character in word.text):
+            continue
+        bx, by, bw, bh = word.bbox.to_list()
+        pad = max(4, int(round(bh * .3)))
+        strip = max(6, int(round(bh * .6)), 2 * thickness)
+        x0, y0 = max(0, bx - pad), max(0, by - pad)
+        x1, y1 = min(width, bx + bw + pad), min(height, by + bh + pad)
+        tolerance = max(6.0, .35 * bh)
+        sides = {}
+        left = mask[y0:y1, max(0, x0 - strip):x0]
+        right = mask[y0:y1, x1:min(width, x1 + strip)]
+        top = mask[max(0, y0 - strip):y0, x0:x1]
+        bottom = mask[y1:min(height, y1 + strip), x0:x1]
+
+        def enters(region: np.ndarray, across_axis: int) -> bool:
+            """A stroke entering through this side crosses the strip (runs
+            across its depth) and is narrow along the side; a line running
+            alongside the label, or an arrowhead wing, does not."""
+            if not region.size or not np.any(region):
+                return False
+            depth = region.shape[across_axis]
+            covered = np.count_nonzero(np.any(region > 0, axis=1 - across_axis))
+            spread = np.count_nonzero(np.any(region > 0, axis=across_axis))
+            return covered >= .6 * depth and spread <= 2.5 * thickness + 4
+
+        entering = set()
+        if left.size and np.any(left):
+            sides["left"] = (x0 - 1, int(round(float(np.median(np.where(left > 0)[0])) + y0)))
+            if enters(left, 1):
+                entering.add("left")
+        if right.size and np.any(right):
+            sides["right"] = (x1, int(round(float(np.median(np.where(right > 0)[0])) + y0)))
+            if enters(right, 1):
+                entering.add("right")
+        if top.size and np.any(top):
+            sides["top"] = (int(round(float(np.median(np.where(top > 0)[1])) + x0)), y0 - 1)
+            if enters(top, 0):
+                entering.add("top")
+        if bottom.size and np.any(bottom):
+            sides["bottom"] = (int(round(float(np.median(np.where(bottom > 0)[1])) + x0)), y1)
+            if enters(bottom, 0):
+                entering.add("bottom")
+        route = None
+        if "left" in sides and "right" in sides and abs(sides["left"][1] - sides["right"][1]) <= tolerance:
+            route = [sides["left"], sides["right"]]
+        elif "top" in sides and "bottom" in sides and abs(sides["top"][0] - sides["bottom"][0]) <= tolerance:
+            route = [sides["top"], sides["bottom"]]
+        elif len(sides) == 2 and set(sides) == entering:
+            # A label at the corner of an elbow connector: the line enters
+            # through one side and leaves through an adjacent side. Rejoin
+            # it with the right-angle route the connector itself follows.
+            # Both strokes must genuinely enter the box (see ``enters``).
+            (first_side, a), (second_side, b) = sorted(sides.items())
+            horizontal = {"left", "right"}
+            if (first_side in horizontal) != (second_side in horizontal):
+                h_point, v_point = (a, b) if first_side in horizontal else (b, a)
+                route = [h_point, (v_point[0], h_point[1]), v_point]
+        if route and not any(crosses_node(p, q) for p, q in zip(route, route[1:])):
+            for p, q in zip(route, route[1:]):
+                cv2.line(result, p, q, 255, thickness)
+    return result
+
+
 def infer_obvious_missing_branch_to_end(context: PipelineContext, graph: FlowGraph) -> bool:
     """Recover one likely omitted connector when a decision's sibling branch reaches End.
 
@@ -293,7 +448,7 @@ def infer_obvious_missing_branch_to_end(context: PipelineContext, graph: FlowGra
     for a faint/missing connector without guessing from reading order on general
     diagrams. The inferred edge is marked with a warning for review.
     """
-    ends = [n for n in graph.nodes if n.type == "terminal" and n.text.strip().casefold() == "end"]
+    ends = [n for n in graph.nodes if n.type == "terminal" and terminal_role(n.text) == "end"]
     if len(ends) != 1:
         return False
     end = ends[0]
@@ -398,7 +553,7 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
             pending.extend(edge.target for edge in outgoing[current])
         return False
 
-    ends = [n for n in graph.nodes if n.type == "terminal" and n.text.strip().casefold() == "end"]
+    ends = [n for n in graph.nodes if n.type == "terminal" and terminal_role(n.text) == "end"]
     inferred_count = 0
     mask = context.stroke_mask
     height, width = mask.shape[:2]
@@ -760,6 +915,37 @@ def suppress_node_outline_artifacts(mask: np.ndarray, nodes: list[Node]) -> np.n
         cleaned[y0:y1, x0:x1][region > 0] = 0
     return cleaned
 
+def arrowhead_ink(context: PipelineContext, nodes: list[Node], stroke_width: int) -> np.ndarray | None:
+    """Raw connector ink with node bodies (and their outlines) removed.
+
+    The connector mask has a wide safety band erased around every node, which
+    also erases most of an arrowhead that touches its target. Arrowhead tests
+    use this mask instead: only the polygon plus roughly one stroke width is
+    removed, enough to drop the node's own outline but keep the arrowhead.
+    """
+    if context.grayscale is None:
+        return None
+    ink = ink_mask(context.grayscale)
+    removal = np.zeros_like(ink)
+    for node in nodes:
+        bx, by, bw, bh = node.bbox.to_list()
+        polygon = np.asarray(node.polygon or [(bx, by), (bx + bw, by), (bx + bw, by + bh), (bx, by + bh)], np.int32)
+        cv2.fillPoly(removal, [polygon], 255)
+    size = int(2 * stroke_width + 3) | 1
+    ink[cv2.dilate(removal, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))) > 0] = 0
+    if stroke_width >= 3:
+        # Drop 1-2 px anti-aliasing fringes of node outlines; they run off
+        # sideways from an arrowhead tip and would look like a crossing line.
+        ink = cv2.morphologyEx(ink, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+    # Recognised labels next to an arrowhead would otherwise widen its profile.
+    # Erase only glyph components lying entirely inside a label box: an
+    # arrowhead wing that the box happens to overlap continues outside it.
+    ink = erase_enclosed_components(
+        ink, [word.bbox for word in context.edge_words if any(ch.isalnum() for ch in word.text)],
+        protect=cv2.dilate(removal, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))))
+    return ink
+
+
 class GraphService:
     name = "graph"
 
@@ -777,9 +963,15 @@ class GraphService:
         # as close to the observed pixels as possible.
         mask = suppress_node_outline_artifacts(mask, graph.nodes)
         mask = bridge_aligned_connector_gaps(mask, graph.nodes)
+        stroke_width = connector_stroke_width(mask)
+        mask = bridge_through_labels(mask, context.edge_words, graph.nodes, stroke_width)
+        head_mask = arrowhead_ink(context, graph.nodes, stroke_width)
+        touch_distance = max(context.settings.ARROW_ATTACH_DISTANCE,
+                             int(round(mask.shape[1] * context.settings.CONNECTOR_TOUCH_PERMILLE / 1000)))
         count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
         components = sorted(range(1, count), key=lambda index: (int(stats[index, cv2.CC_STAT_TOP]), int(stats[index, cv2.CC_STAT_LEFT])))
         candidates = []
+        deferred: list[tuple[list[str], tuple]] = []
         dangling_fragments: list[tuple[Node, np.ndarray]] = []
         for index in components:
             if stats[index, cv2.CC_STAT_AREA] < 20 or max(stats[index, cv2.CC_STAT_WIDTH], stats[index, cv2.CC_STAT_HEIGHT]) < 18:
@@ -794,22 +986,27 @@ class GraphService:
                 context.settings.ARROW_ATTACH_DISTANCE,
                 int(round(mask.shape[1] * 0.05)),
             )
-            ports = contacts(points, graph.nodes, mask.shape, attach_distance)
-            # A branch label can become part of the same raster component as a
-            # recovered shaft. Its glyphs may create extra near-boundary
-            # contacts on the destination node. When that node has exactly one
-            # arrowhead-backed contact, prefer that endpoint over non-arrowhead
-            # text contacts; retain all contacts when direction is not unique.
+            ports = contacts(points, graph.nodes, mask.shape, attach_distance,
+                             stroke_width=stroke_width, head_mask=head_mask,
+                             touch_distance=touch_distance)
+            # One physical connector end per node: a branch label glued to the
+            # shaft, or an elbow that runs along the node before entering it,
+            # can create several contacts on the same node. Prefer the
+            # arrowhead-backed contact; otherwise keep the closest approach.
+            # One stroke end can lie near two nodes (e.g. under the slanted
+            # corner of a neighbouring parallelogram); it belongs to the node it
+            # actually approaches more closely.
+            same_end = 3.0 * stroke_width + 6.0
+            ports = [port for port in ports if not any(
+                other.node.id != port.node.id and other.distance + 2.0 < port.distance
+                and math.dist(other.point, port.point) <= same_end for other in ports)]
             ports_by_node = defaultdict(list)
             for port in ports:
                 ports_by_node[port.node.id].append(port)
             filtered_ports = []
             for node_ports in ports_by_node.values():
                 head_ports = [port for port in node_ports if port.head]
-                if len(node_ports) > 1 and len(head_ports) == 1:
-                    filtered_ports.append(head_ports[0])
-                else:
-                    filtered_ports.extend(node_ports)
+                filtered_ports.append(min(head_ports or node_ports, key=lambda port: port.distance))
             ports = sorted(filtered_ports, key=lambda port: (port.point[1], port.point[0], port.node.id))
             # Node-border cleanup can leave a visible connector tip just beyond
             # the normal attachment band. Expand only when the observed stroke
@@ -825,7 +1022,7 @@ class GraphService:
                     original_ids = {port.node.id for port in ports}
                     terminal_nodes = [node for node in expanded_nodes.values()
                                       if node.type == "terminal"
-                                      and node.text.strip().casefold() in {"start", "end"}]
+                                      and terminal_role(node.text) is not None]
                     if (len(expanded_nodes) == 2 and len(terminal_nodes) == 1
                             and set(expanded_nodes) != original_ids):
                         ports = expanded_ports
@@ -847,10 +1044,10 @@ class GraphService:
             if len(distinct_nodes) == 2:
                 start_nodes = [node for node in graph.nodes
                                if node.id in node_ports and node.type == "terminal"
-                               and node.text.strip().casefold() == "start"]
+                               and terminal_role(node.text) == "start"]
                 end_nodes = [node for node in graph.nodes
                              if node.id in node_ports and node.type == "terminal"
-                             and node.text.strip().casefold() == "end"]
+                             and terminal_role(node.text) == "end"]
                 if len(start_nodes) == 1:
                     start_node = start_nodes[0]
                     other = next(node for node in graph.nodes if node.id in node_ports and node.id != start_node.id)
@@ -908,7 +1105,7 @@ class GraphService:
                 elif role_pair == {"output", "terminal"}:
                     output = first if first.node.type == "output" else second
                     terminal = first if first.node.type == "terminal" else second
-                    inferred = (output, terminal) if terminal.text.strip().casefold() == "end" else (terminal, output)
+                    inferred = (output, terminal) if terminal_role(terminal.text) == "end" else (terminal, output)
                 elif role_pair == {"output", "decision"}:
                     output = first if first.node.type == "output" else second
                     decision = first if first.node.type == "decision" else second
@@ -938,10 +1135,10 @@ class GraphService:
                         continue
 
             if not targets:
-                context.diagnose("error", "AMBIGUOUS_ARROW_DIRECTION", "A connector has no reliably visible arrowhead.", "Use a larger, visible V-shaped or filled triangular arrowhead. Direction is never inferred from layout.", ids)
+                deferred.append((ids, ("error", "AMBIGUOUS_ARROW_DIRECTION", "A connector has no reliably visible arrowhead.", "Use a larger, visible V-shaped or filled triangular arrowhead. Direction is never inferred from layout.", ids)))
                 continue
             if not sources:
-                context.diagnose("error", "AMBIGUOUS_CONNECTOR", "A connector has arrowheads but no reliable source boundary.", "Check that each arrow starts on a shape boundary.", ids)
+                deferred.append((ids, ("error", "AMBIGUOUS_CONNECTOR", "A connector has arrowheads but no reliable source boundary.", "Check that each arrow starts on a shape boundary.", ids)))
                 continue
 
             # Two curved branches can touch the same terminal boundary and be
@@ -972,10 +1169,14 @@ class GraphService:
             elif len(sources) == 1:
                 pairs_to_trace = [(sources[0], target, stroke_path(points, sources[0].point, target.point)) for target in targets]
             elif len(targets) == 1:
-                # A shared arrowhead is not enough evidence to determine which
-                # of several incoming strokes is the real source.
-                context.diagnose("error", "AMBIGUOUS_CONNECTOR", "Several source boundaries share one arrowhead.", "Separate the connector paths so each arrow has one source and one target.", ids)
-                continue
+                # Flow lines that join before a single arrowhead (a loop-back
+                # collecting several branches, or every branch converging on
+                # End) are standard flowchart notation: each arrowhead-free
+                # end is a tail and the one arrowhead is their common target.
+                # Every edge follows visible ink to the visible arrowhead.
+                target = targets[0]
+                pairs_to_trace = [(source, target, stroke_path(points, source.point, target.point))
+                                  for source in sources]
             else:
                 context.diagnose("error", "AMBIGUOUS_CONNECTOR", "A crossing or multi-way connector cannot be resolved safely.", "Separate crossing lines and use labeled connector circles for distant paths.", ids)
                 continue
@@ -985,6 +1186,26 @@ class GraphService:
                     context.diagnose("error", "DANGLING_ARROW", "A connector path is interrupted.", "Reconnect the line in the source diagram.", [source.node.id, target.node.id])
                     continue
                 candidates.append((source, target, path))
+        # The same node pair can be reported by two components when a stray
+        # fragment (e.g. part of a label glyph) sits beside the real arrow.
+        unique, seen_pairs = [], set()
+        for item in candidates:
+            pair = (item[0].node.id, item[1].node.id)
+            if pair not in seen_pairs:
+                seen_pairs.add(pair)
+                unique.append(item)
+        candidates = unique
+        # A direction-ambiguous fragment is only an error when it is the sole
+        # evidence for its connection; if a clean connector already joins the
+        # same nodes it is a redundant fragment, reported as a warning only.
+        connected = {frozenset(pair) for pair in seen_pairs}
+        for ids, arguments in deferred:
+            if len(ids) == 2 and frozenset(ids) in connected:
+                context.diagnose("warning", "REDUNDANT_CONNECTOR_FRAGMENT",
+                                 "A short stroke beside an already-traced connector was ignored.",
+                                 "No action is needed unless a second, separate connection was intended.", ids)
+            else:
+                context.diagnose(*arguments)
         candidates.sort(key=lambda item: (min(point[1] for point in item[2]), min(point[0] for point in item[2]), item[0].node.id, item[1].node.id))
         for index, (source, target, path) in enumerate(candidates, 1):
             edge = Edge(f"e{index}", source.node.id, target.node.id, points=path)
@@ -998,10 +1219,20 @@ class GraphService:
         # intended convergence. General reading-order edge guessing remains off.
         infer_obvious_missing_branch_to_end(context, graph)
         infer_high_confidence_missing_edges(context, graph)
+        node_types = {node.id: node.type for node in graph.nodes}
         for word in context.edge_words:
             if not any(character.isalnum() for character in word.text):
                 continue
             distances = sorted((distance_to_path(word.bbox.center, edge.points), index) for index, edge in enumerate(graph.edges))
+            # Yes/No/True/False only has meaning on a decision's outgoing
+            # branch. When such a branch is a comparably close candidate (for
+            # example where a merging arrow shares the branch's trunk), assign
+            # the label among decision branches only.
+            if normalize_label(word.text) and distances:
+                branch = [(d, i) for d, i in distances
+                          if node_types.get(graph.edges[i].source) in ("decision", "iteration")]
+                if branch and branch[0][0] <= max(75, word.bbox.height * 3) and branch[0][0] <= distances[0][0] * 1.5 + 5:
+                    distances = branch
             if not distances or distances[0][0] > max(75, word.bbox.height * 3):
                 continue
             if len(distances) > 1 and abs(distances[1][0] - distances[0][0]) < 5:
@@ -1153,9 +1384,9 @@ class GraphService:
                 graph.edges.append(Edge(f"e{len(graph.edges) + 1}", second.id, first.id, structural=True))
             else:
                 context.diagnose("error", "AMBIGUOUS_CONNECTOR_PAIR", "A connector pair has ambiguous entry and exit arrows.", "One circle receives flow; its matching circle sends flow onward.", [first.id, second.id])
-        starts = [node.id for node in graph.nodes if node.type == "terminal" and node.text.strip().casefold() == "start"]
+        starts = [node.id for node in graph.nodes if node.type == "terminal" and terminal_role(node.text) == "start"]
         graph.start_id = starts[0] if len(starts) == 1 else None
-        graph.end_ids = [node.id for node in graph.nodes if node.type == "terminal" and node.text.strip().casefold() == "end"]
+        graph.end_ids = [node.id for node in graph.nodes if node.type == "terminal" and terminal_role(node.text) == "end"]
         return context
 
 

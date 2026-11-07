@@ -236,7 +236,12 @@ def test_modulo_even_odd_flowchart_recognizes_nodes_edges_and_decision_text():
     nodes = {node.id: node for node in result.elements}
     assert len(nodes) == 6
     assert nodes["n2"].text == "Input variable: Number"
-    assert nodes["n3"].text == "If Number%2 == 0"
+    # The diamond literally reads "If Number%2=0". Recognised text stays
+    # faithful to the drawing; the condition layer reads the lone "=" as the
+    # equality a decision implies (an assignment cannot occur in a condition).
+    from backend.notation import normalize_condition
+    assert nodes["n3"].text.replace(" ", "").casefold() in {"ifnumber%2=0", "ifnumber%2==0"}
+    assert normalize_condition(nodes["n3"].text) == "Number%2 == 0"
     assert nodes["n4"].text == 'Output "Number is odd"'
     assert nodes["n5"].text == 'Output "number is even"'
     edges = {(edge.source, edge.target): edge.label for edge in result.graph.edges}
@@ -336,7 +341,9 @@ def test_factorial_branch_chart_recovers_visible_vertical_and_missing_decision_e
     decision_edges = [edge for edge in result.graph.edges if edge.source == "n3"]
     assert {(edge.target, edge.label) for edge in decision_edges} == {("n5", "Yes"), ("n4", "No")}
     assert not any(d.code == "INVALID_BRANCH_LABELS" for d in result.diagnostics)
-    assert any(d.code == "INFERRED_BRANCH_LABELS" for d in result.diagnostics)
+    # Targeted connector-label OCR now usually reads these words directly; the
+    # opposite-side departure inference remains the fallback when it cannot.
+    # Either way the labels above must be correct.
     # Recovered edges are real flow edges, not display-only structural hints:
     # validation and structured pseudocode generation must complete as well.
     assert not result.has_errors

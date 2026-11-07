@@ -636,6 +636,19 @@ The initial fast baseline in this environment is **13 passed, 11 skipped** (the 
 
 To add a fixture: add a PNG under `tests/fixtures/flowcharts/`, add exact expected node types/text and directed edges (including branch labels) to the manifest, and add a readable control-flow specification under `tests/fixtures/expected/`. Prefer exact expected pseudocode only after manually verifying the recognition and logic output; never bless a current incorrect output as ground truth merely to make the test pass.
 
+### Structural scoring of the sample flowcharts
+
+`tests/fixtures/samples_ground_truth.json` annotates every node (centre, type, text), directed edge and branch label of the ten charts in `samples/`. `tests/flowchart_scoring.py` matches recognised nodes geometrically (not by ID) and scores detection, shape type, OCR text, edges, direction and labels separately; a chart passes only when its interpreted structure is exactly right.
+
+```bash
+python tests/evaluate_samples.py                      # per-stage report for samples/
+python tests/generate_unseen_flowcharts.py /tmp/unseen  # 20 charts in unseen styles
+python tests/evaluate_samples.py --ground-truth /tmp/unseen/ground_truth.json
+FLOWCHART_RUN_PIPELINE=1 python -m pytest tests/test_sample_flowcharts.py -q
+```
+
+`tests/test_connector_tracing.py` covers the shape, connector, arrowhead and label stages with OCR-free synthetic geometry and runs in the default fast suite. See `RECOGNITION_FIXES.md` for the recognition changes these tests protect.
+
 ---
 
 ## 13. Roadmap

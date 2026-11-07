@@ -35,18 +35,57 @@ def normalize_label(text: str | None) -> str | None:
     value = re.sub(r"\s+", " ", value)
     return BRANCH_LABELS.get(value)
 
+START_WORDS = ("start", "begin")
+END_WORDS = ("end", "stop", "exit", "finish", "halt")
+
+
+def terminal_role(text: str | None) -> str | None:
+    """Return "start"/"end" for a terminal label, accepting common synonyms.
+
+    Flowchart tools and textbooks use Begin/Start and End/Stop/Exit/Finish
+    interchangeably; surrounding punctuation from OCR is ignored. Anything else
+    (e.g. "Return result") is not treated as a terminal role.
+    """
+    value = re.sub(r"^[\W_]+|[\W_]+$", "", (text or "").strip().casefold())
+    if value in START_WORDS:
+        return "start"
+    if value in END_WORDS:
+        return "end"
+    return None
+
+
+def _parses(expression: str) -> bool:
+    try:
+        ast.parse(expression, mode="eval")
+        return True
+    except (SyntaxError, ValueError, RecursionError):
+        return False
+
+
 def normalize_condition(text: str) -> str:
     """Accept natural flowchart decision labels such as `if x % 2 == 0`.
 
     A diamond represents a condition, not a Python compound-statement block, so
     strip an optional leading `if` and trailing colon before parsing/rendering.
+    Question-form wrappers (`is a > b?`, `Does S = 0?`) are removed only when
+    what remains is a valid expression, and because an assignment cannot occur
+    in a condition, a lone `=` is read as the equality pseudocode intends - but
+    again only when that turns an unparseable condition into a valid one. The
+    recognised node text itself is never rewritten.
     """
     condition = text.strip()
     if re.match(r"^if\s+", condition, re.IGNORECASE):
         condition = re.sub(r"^if\s+", "", condition, count=1, flags=re.IGNORECASE).strip()
     if condition.endswith(":"):
         condition = condition[:-1].rstrip()
-    return condition
+    if _parses(condition):
+        return condition
+    candidate = condition.rstrip("?").rstrip()
+    candidate = re.sub(r"^(?:is|does|do|are)\s+(?=\S)", "", candidate, count=1, flags=re.IGNORECASE)
+    if not _parses(candidate):
+        equality = re.sub(r"(?<![=!<>])=(?!=)", " == ", candidate)
+        candidate = " ".join(equality.split()) if _parses(equality) else candidate
+    return candidate if _parses(candidate) else condition
 
 def safe_name(name: str) -> bool:
     return bool(NAME.fullmatch(name)) and "__" not in name and name not in SAFE_BUILTINS and not keyword.iskeyword(name)
@@ -85,8 +124,8 @@ def validate_node_text(kind: str, text: str) -> None:
     if not text:
         raise NotationError("The shape has no readable text.")
     if kind == "terminal":
-        if text.casefold() not in ("start", "end"):
-            raise NotationError("A terminal must contain only Start or End.")
+        if terminal_role(text) is None:
+            raise NotationError("A terminal must contain only Start or End (Begin, Stop, Exit and Finish are also accepted).")
     elif kind == "connector":
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,7}", text):
             raise NotationError("A connector needs a short matching letter/number label.")

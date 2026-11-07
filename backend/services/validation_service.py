@@ -2,7 +2,7 @@
 from collections import defaultdict
 import networkx as nx
 from backend.models import PipelineContext
-from backend.notation import NotationError, normalize_label, validate_node_text
+from backend.notation import terminal_role, NotationError, normalize_label, validate_node_text
 from backend.services.programming_ocr_validation import ProgrammingOCRValidationService
 
 def _reconcile_decision_labels(context: PipelineContext) -> None:
@@ -122,8 +122,8 @@ class ValidationService:
             outgoing[edge.source].append(edge)
             directed.add_edge(edge.source, edge.target)
         branch_terminals = branch_terminal_outputs(graph)
-        starts = [node.id for node in graph.nodes if node.type == "terminal" and node.text.strip().casefold() == "start"]
-        ends = [node.id for node in graph.nodes if node.type == "terminal" and node.text.strip().casefold() == "end"]
+        starts = [node.id for node in graph.nodes if node.type == "terminal" and terminal_role(node.text) == "start"]
+        ends = [node.id for node in graph.nodes if node.type == "terminal" and terminal_role(node.text) == "end"]
         graph.start_id = starts[0] if len(starts) == 1 else None
         graph.end_ids = ends
         if not starts:

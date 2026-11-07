@@ -12,6 +12,8 @@ import numpy as np
 import pytesseract
 
 from backend.models import BoundingBox, Node, OCRWord, PipelineContext
+from backend.notation import normalize_label
+from backend.services.connector_geometry import ink_mask
 
 OCR_LOCK = Lock()  # pytesseract's executable setting is process-global.
 
@@ -46,6 +48,101 @@ def _drop_enclosing_cycle_faces(candidates: list[np.ndarray]) -> list[np.ndarray
                 rejected.add(i)
                 break
     return [item[0] for index, item in enumerate(geometry) if index not in rejected]
+
+
+def estimate_stroke_width(binary: np.ndarray, maximum: int = 60) -> int:
+    """Estimate the dominant line/glyph stroke thickness of an ink mask.
+
+    Every vertical connector contributes one horizontal run of exactly its
+    thickness per image row (and vice versa), as do most text strokes, so the
+    mode of short foreground run lengths is a robust, scale-free estimate. It
+    lets morphology be sized to the drawing instead of to fixed pixel counts.
+    """
+    if binary is None or binary.size == 0 or not np.any(binary):
+        return 3
+    foreground = (binary > 0).astype(np.int8)
+    lengths = []
+    for mask in (foreground, foreground.T):
+        delta = np.diff(np.pad(mask, ((0, 0), (1, 1))), axis=1)
+        starts, ends = np.where(delta == 1)[1], np.where(delta == -1)[1]
+        lengths.append(ends - starts)
+    runs = np.concatenate(lengths)
+    runs = runs[(runs >= 1) & (runs <= maximum)]
+    if runs.size == 0:
+        return 3
+    return int(max(1, np.bincount(runs).argmax()))
+
+
+def _fill_holes(mask: np.ndarray) -> np.ndarray:
+    """Fill enclosed holes (text glyphs inside a filled node) in a binary ROI."""
+    padded = cv2.copyMakeBorder(mask, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+    flood = padded.copy()
+    seed_mask = np.zeros((padded.shape[0] + 2, padded.shape[1] + 2), np.uint8)
+    cv2.floodFill(flood, seed_mask, (0, 0), 255)
+    holes = cv2.bitwise_not(flood)
+    return cv2.bitwise_or(padded, holes)[1:-1, 1:-1]
+
+
+def filled_region_contours(binary: np.ndarray, grayscale: np.ndarray,
+                           color_image: np.ndarray | None = None) -> list[np.ndarray]:
+    """Find outline-free, colour/gray filled nodes with their true geometry.
+
+    Connectors frequently share a node's colour (or are saturated themselves),
+    so the fill mask first removes everything thinner than about twice the
+    drawing's own stroke width. Each surviving blob is then rebuilt from the
+    *raw* fill mask (holes filled), which restores the sharp corners and slanted
+    sides that the opening rounded off; otherwise rectangles and parallelograms
+    look like rounded terminals to the classifier. Text-coloured blobs (bold
+    branch labels) are rejected because a real node fill is mostly solid.
+    """
+    hsv = cv2.cvtColor(color_image, cv2.COLOR_BGR2HSV) if color_image is not None else cv2.cvtColor(cv2.cvtColor(grayscale, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2HSV)
+    saturated = hsv[:, :, 1] > 25
+    neutral = (grayscale > 80) & (grayscale < 235) & (hsv[:, :, 1] < 35)
+    raw = np.where(saturated | neutral, 255, 0).astype(np.uint8)
+    stroke = estimate_stroke_width(binary)
+    size = int(np.clip(2 * stroke + 3, 9, 31)) | 1
+    opened = cv2.morphologyEx(raw, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
+    page_area = raw.size
+    height, width = raw.shape[:2]
+    regrow = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size + 4, size + 4))
+    trim_size = max(3, min(size - 2, stroke + 2)) | 1
+    trim = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (trim_size, trim_size))
+    candidates = []
+    for index in range(1, count):
+        x, y, w, h, area = map(int, stats[index])
+        if area < max(300, page_area * .0008) * .5 or min(w, h) < 30:
+            continue
+        pad = size + 4
+        x0, y0 = max(0, x - pad), max(0, y - pad)
+        x1, y1 = min(width, x + w + pad), min(height, y + h + pad)
+        component = np.where(labels[y0:y1, x0:x1] == index, 255, 0).astype(np.uint8)
+        region = cv2.bitwise_and(cv2.dilate(component, regrow), raw[y0:y1, x0:x1])
+        solid_pixels = int(np.count_nonzero(region))
+        region = _fill_holes(region)
+        # Remove connector stubs that the regrow step re-attached.
+        region = cv2.morphologyEx(region, cv2.MORPH_OPEN, trim)
+        contours, _ = cv2.findContours(region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            continue
+        contour = max(contours, key=cv2.contourArea) + np.array([[[x0, y0]]])
+        area = cv2.contourArea(contour)
+        bx, by, bw, bh = cv2.boundingRect(contour)
+        short_side, long_side = min(bw, bh), max(bw, bh)
+        aspect = long_side / max(1.0, short_side)
+        # The fill-based pass can pick up arrow shafts and arrowheads because
+        # they share the same gray/colored pixels as node fills. Real flowchart
+        # nodes have meaningful two-dimensional extent.
+        if (area < max(300, page_area * .0008) or short_side < 35
+                or area / max(1, bw * bh) < .30 or area > page_area * .4
+                or (aspect > 2.35 and short_side < 36)):
+            continue
+        # Bold coloured text forms a blob whose own pixels cover well under
+        # half of its outline; node fills are solid apart from their labels.
+        if solid_pixels / max(1.0, area) < .55:
+            continue
+        candidates.append(contour.astype(np.int32))
+    return candidates
 
 
 def shape_contours(binary: np.ndarray, grayscale: np.ndarray | None = None, color_image: np.ndarray | None = None) -> list[np.ndarray]:
@@ -92,28 +189,7 @@ def shape_contours(binary: np.ndarray, grayscale: np.ndarray | None = None, colo
     # Some diagram tools export filled nodes without an outline. Saturated
     # fills can be separated from black arrows/text in HSV; neutral gray fills
     # use a mid-value mask so black connectors remain excluded.
-    hsv = cv2.cvtColor(color_image, cv2.COLOR_BGR2HSV) if color_image is not None else cv2.cvtColor(cv2.cvtColor(grayscale, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2HSV)
-    saturated = hsv[:, :, 1] > 25
-    neutral = (grayscale > 80) & (grayscale < 235) & (hsv[:, :, 1] < 35)
-    filled = np.where(saturated | neutral, 255, 0).astype(np.uint8)
-    filled = cv2.morphologyEx(filled, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
-    filled = cv2.morphologyEx(filled, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
-    contours, _ = cv2.findContours(filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    page_area = filled.size
-    candidates=[]
-    for contour in contours:
-        area=cv2.contourArea(contour); x,y,width,height=cv2.boundingRect(contour)
-        short_side, long_side = min(width, height), max(width, height)
-        aspect = long_side / max(1.0, short_side)
-        # The fill-based fallback can pick up arrow shafts and arrowheads because
-        # they share the same gray/colored pixels as node fills. Real flowchart
-        # nodes have meaningful two-dimensional extent; reject thin components
-        # here as well as in the outlined-contour pass.
-        if (area < max(300, page_area*.0008) or short_side < 35
-                or area/(width*height)<.30 or area > page_area*.4
-                or (aspect > 2.35 and short_side < 36)):
-            continue
-        candidates.append(contour)
+    candidates = filled_region_contours(binary, grayscale, color_image)
     # A filled node often contains many contours from the white gaps inside
     # glyphs.  Point-in-polygon containment is therefore not a valid duplicate
     # test here: it treats every text hole as if it were the filled node itself
@@ -152,7 +228,77 @@ def shape_contours(binary: np.ndarray, grayscale: np.ndarray | None = None, colo
     return sorted(retained, key=lambda contour:(cv2.boundingRect(contour)[1],cv2.boundingRect(contour)[0],cv2.boundingRect(contour)[2]))
 
 
+def side_profile(contour: np.ndarray) -> dict | None:
+    """Measure a shape's left/right boundaries row by row.
+
+    Returns the fitted slopes of both side edges (pixels of horizontal shift per
+    row), their straightness, and the widths of the top/bottom edges. This is a
+    rotation-sensitive but highly reliable description of flowchart I/O
+    parallelograms: horizontal top and bottom edges with two parallel slanted
+    sides. It is independent of polygon-approximation vertex counts, which are
+    unstable for slight slants, antialiasing and attached connector stubs.
+    """
+    x, y, width, height = cv2.boundingRect(contour)
+    if width < 20 or height < 20:
+        return None
+    mask = np.zeros((height, width), np.uint8)
+    cv2.drawContours(mask, [contour - np.array([[[x, y]]])], -1, 255, cv2.FILLED)
+    rows = np.arange(int(height * .15), int(height * .85))
+    if len(rows) < 6:
+        return None
+    filled = mask[rows] > 0
+    has = filled.any(axis=1)
+    rows, filled = rows[has], filled[has]
+    if len(rows) < 6:
+        return None
+    left = filled.argmax(axis=1).astype(float)
+    right = (width - 1 - filled[:, ::-1].argmax(axis=1)).astype(float)
+    left_fit, right_fit = np.polyfit(rows, left, 1), np.polyfit(rows, right, 1)
+    left_residual = float(np.std(left - np.polyval(left_fit, rows)))
+    right_residual = float(np.std(right - np.polyval(right_fit, rows)))
+
+    def edge_width(row_slice: slice) -> float:
+        band = mask[row_slice] > 0
+        return float(np.max(band.sum(axis=1))) if band.size else 0.0
+
+    edge_rows = max(1, int(round(height * .04)))
+    return {"left_slope": float(left_fit[0]), "right_slope": float(right_fit[0]),
+            "left_residual": left_residual, "right_residual": right_residual,
+            "top_width": edge_width(slice(0, edge_rows)) / width,
+            "bottom_width": edge_width(slice(height - edge_rows, height)) / width,
+            "width": width, "height": height}
+
+
+def looks_like_parallelogram(contour: np.ndarray) -> bool:
+    """Horizontal top/bottom edges joined by two straight, parallel slanted sides."""
+    profile = side_profile(contour)
+    if profile is None:
+        return False
+    height = profile["height"]
+    left, right = profile["left_slope"], profile["right_slope"]
+    shift_left, shift_right = abs(left) * height, abs(right) * height
+    straight = max(profile["left_residual"], profile["right_residual"]) <= max(1.5, height * .03)
+    return bool(straight and left * right > 0
+                and min(shift_left, shift_right) >= max(4.0, height * .08)
+                and abs(shift_left - shift_right) <= max(4.0, .35 * max(shift_left, shift_right))
+                and profile["top_width"] >= .55 and profile["bottom_width"] >= .55)
+
+
 def classify_shape(contour: np.ndarray, page_width: int) -> str:
+    """Classify a contour from geometric rules, then cross-check I/O slant geometry.
+
+    A slightly slanted parallelogram has near-right corner angles, so the
+    vertex/angle rules can call it a process; the side-profile check corrects
+    only that specific confusion and never overrides other classes.
+    """
+    kind = _classify_shape_rules(contour, page_width)
+    if kind in {"process", "unknown"} and contour is not None and len(contour) >= 4 \
+            and looks_like_parallelogram(contour):
+        return "data"
+    return kind
+
+
+def _classify_shape_rules(contour: np.ndarray, page_width: int) -> str:
     """Classify a contour from several geometric cues; return unknown on weak evidence.
 
     Polygon approximation is evaluated at two scales because antialiasing and
@@ -276,6 +422,47 @@ def classify_shape(contour: np.ndarray, page_width: int) -> str:
     return "unknown"
 
 
+def mask_outside_shape(crop: np.ndarray, contour: np.ndarray, stroke: int = 3) -> np.ndarray:
+    """Replace pixels outside a node's own outline with its interior background.
+
+    Diamond, parallelogram and capsule crops contain slanted borders, page
+    background and neighbouring connectors; Tesseract reads those as `~`, `/`
+    or `|` debris, and they can reorder or corrupt multi-line labels. Filling
+    with the interior's dominant tone (not white) avoids creating a new strong
+    edge on coloured fills, so anti-aliased glyphs are left untouched.
+    """
+    if crop is None or crop.size == 0 or contour is None or len(contour) < 3:
+        return crop
+    inside = np.zeros(crop.shape[:2], np.uint8)
+    cv2.drawContours(inside, [contour.astype(np.int32)], -1, 255, cv2.FILLED)
+    size = int(np.clip(2 * stroke + 3, 5, 25)) | 1
+    inside = cv2.erode(inside, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
+    if np.count_nonzero(inside) < 50:
+        return crop
+    values = crop[inside > 0]
+    background = int(np.bincount(values.ravel() if values.ndim == 1 else values.reshape(-1)).argmax()) if crop.ndim == 2 \
+        else np.median(values, axis=0).astype(crop.dtype)
+    result = crop.copy()
+    result[inside == 0] = background
+    return result
+
+
+def read_words_safely(image: np.ndarray, context: PipelineContext, psm: int,
+                      origin: tuple[int, int] = (0, 0)) -> tuple[str, list[OCRWord]]:
+    """One OCR attempt among several candidates; a crash yields no reading.
+
+    Tesseract occasionally aborts on a single unusual crop (for example noisy
+    JPEG fragments). That should cost one candidate, not the whole analysis.
+    A missing executable or a timeout still propagates to the caller.
+    """
+    try:
+        return read_words(image, context, psm, origin)
+    except pytesseract.TesseractError as error:
+        if "timeout" in str(error).lower():
+            raise
+        return "", []
+
+
 def read_words(image: np.ndarray, context: PipelineContext, psm: int, origin: tuple[int, int] = (0, 0)) -> tuple[str, list[OCRWord]]:
     data = pytesseract.image_to_data(image, lang=context.settings.OCR_LANGUAGE,
         config=f"--psm {psm} -c preserve_interword_spaces=1", output_type=pytesseract.Output.DICT,
@@ -396,6 +583,13 @@ def _candidate_score(text: str, words: list[OCRWord], shape_type: str = "unknown
     # A syntactically coherent reading should beat similarly confident OCR
     # debris, but this is a ranking hint rather than a hard validity filter.
     score += _syntax_plausibility(cleaned, shape_type)
+    if shape_type in {"process", "decision", "iteration", "output", "unknown"}:
+        # Single-glyph names l/I/O/o in expressions are far more often OCR
+        # readings of 1/0 than real variables (PEP 8 forbids them for exactly
+        # this reason). A small ranking penalty only; nothing is rewritten.
+        expression = re.sub(r"^(?:if|while|print|output)\b", "", cleaned, flags=re.IGNORECASE)
+        expression = re.sub(r"(['\"]).*?\1", "", expression)
+        score -= .25 * len(re.findall(r"(?<![A-Za-z0-9_])[lIOo](?![A-Za-z0-9_])", expression))
     if shape_type in {"decision", "iteration"} and re.search(
             r"(?:==|!=|<=|>=|<|>)\s*[0-9]+(?:\b|$)", cleaned):
         # In a comparison operand, a clean numeric literal is a more likely
@@ -460,6 +654,13 @@ def _repair_programming_ocr(text: str, shape_type: str) -> list[str]:
     source = " ".join(text.split()).translate(str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'"}))
     source = re.sub(r"^[\s/|\\]+", "", source).strip()
     proposals: list[str] = []
+    original = source
+    # Whole tokens made only of border debris (`~~`, `|`, `\\`) at either end of
+    # a reading come from shape edges, never from label text.
+    debris_free = re.sub(r"^(?:[~`|\\_\u2014\u2013]+\s+)+|(?:\s+[~`|\\_\u2014\u2013]+)+$", "", source).strip()
+    if debris_free and debris_free != source:
+        proposals.append(debris_free)
+        source = debris_free
     trademark_cleaned = re.sub(r"™\s*[A-Za-z]?\b", "", source).strip()
     if trademark_cleaned != source:
         proposals.append(trademark_cleaned)
@@ -546,7 +747,7 @@ def _repair_programming_ocr(text: str, shape_type: str) -> list[str]:
         if normalized != source:
             proposals.append(normalized)
 
-    return list(dict.fromkeys(item for item in proposals if item and item != source))
+    return list(dict.fromkeys(item for item in proposals if item and item != original))
 
 
 def _syntax_plausibility(text: str, shape_type: str) -> float:
@@ -571,8 +772,14 @@ def _syntax_plausibility(text: str, shape_type: str) -> float:
             if re.match(r"^Output\s+", candidate, re.IGNORECASE):
                 ast.parse(re.split(r"\s+", candidate, maxsplit=1)[1], mode="eval")
                 return .9
-            ast.parse(candidate, mode="exec")
-            return .85
+            tree = ast.parse(candidate, mode="exec")
+            # A process statement is an assignment or a call; a bare
+            # expression parses as Python but is not a valid process step.
+            body = tree.body
+            if len(body) == 1 and (isinstance(body[0], (ast.Assign, ast.AugAssign))
+                                   or (isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Call))):
+                return .85
+            return .3
     except (SyntaxError, ValueError, RecursionError):
         return 0.0
     return 0.0
@@ -595,7 +802,9 @@ def _repair_ocr_text(text: str, shape_type: str) -> list[str]:
         # OCR commonly inserts a stray dot/colon after the decision keyword
         # ("If . value > 0"). Remove only punctuation immediately following
         # that keyword; punctuation inside the expression remains untouched.
-        cleaned = re.sub(r"^(\s*if)\s*[.:,;]+\s*", r"\1 ", source, flags=re.IGNORECASE)
+        # Border debris removed from either end is OCR-noise evidence too.
+        base = re.sub(r"^(?:[~`|\\_\u2014\u2013]+\s+)+|(?:\s+[~`|\\_\u2014\u2013]+)+$", "", source).strip() or source
+        cleaned = re.sub(r"^(\s*if)\s*[.:,;]+\s*", r"\1 ", base, flags=re.IGNORECASE)
         spaced = _normalize_comparison_spacing(cleaned, shape_type)
         if spaced != source:
             results.append(spaced)
@@ -689,7 +898,7 @@ def read_best_words(image: np.ndarray, context: PipelineContext, origin: tuple[i
         else:
             page_modes = (6, 11)
         for psm in page_modes:
-            text, words = read_words(variant, context, psm, origin)
+            text, words = read_words_safely(variant, context, psm, origin)
             scale_x = variant.shape[1] / max(1, image.shape[1])
             scale_y = variant.shape[0] / max(1, image.shape[0])
             if scale_x != 1 or scale_y != 1:
@@ -712,7 +921,7 @@ def read_best_words(image: np.ndarray, context: PipelineContext, origin: tuple[i
         center_crop = image[top:top + crop_h, left:left + crop_w]
         enlarged = cv2.resize(center_crop, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         crop_origin = (origin[0] + left, origin[1] + top)
-        text, words = read_words(enlarged, context, 7, crop_origin)
+        text, words = read_words_safely(enlarged, context, 7, crop_origin)
         for word in words:
             box = word.bbox
             word.bbox = BoundingBox(
@@ -783,6 +992,259 @@ def _reconcile_low_confidence_comparison_thresholds(nodes: list[Node]) -> None:
         node.flags.append("CONTEXT_CORRECTED_OCR")
 
 
+def grow_through_ink(bodies: np.ndarray, ink: np.ndarray, stroke: int) -> np.ndarray:
+    """Extend node masks over their own outline ink (geodesic dilation).
+
+    A node found from its interior (outlined shapes) or its fill leaves the
+    drawn border outside the mask. Growing only through ink pixels, for a
+    bounded distance of roughly one outline width, removes that border whatever
+    its colour or thickness, while background gaps stop the growth. Connector
+    roots are shortened by at most the same distance, which the graph stage's
+    attachment tolerance already absorbs.
+    """
+    steps = int(np.clip(stroke + 2, 3, 20))
+    grown = bodies.copy()
+    allowed = cv2.bitwise_or(ink, bodies)
+    kernel = np.ones((3, 3), np.uint8)
+    for _ in range(steps):
+        grown = cv2.bitwise_and(cv2.dilate(grown, kernel), allowed)
+    return cv2.dilate(grown, kernel)
+
+
+def erase_enclosed_components(mask: np.ndarray, boxes: list[BoundingBox], margin: int | None = None,
+                              protect: np.ndarray | None = None) -> np.ndarray:
+    """Erase connected components of ``mask`` that lie entirely inside a box.
+
+    The box is padded by about a third of the glyph height (OCR glyph boxes
+    are a few pixels tight); connectors and arrowheads still extend well
+    beyond it. Components touching ``protect`` (the removed node areas) are
+    connector ends cut off by node cleanup - typically an arrowhead - and are
+    always kept.
+    """
+    if not boxes:
+        return mask
+    result = mask.copy()
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    protected = set()
+    if protect is not None:
+        border = cv2.dilate(protect, np.ones((5, 5), np.uint8))
+        protected = set(np.unique(labels[(border > 0) & (mask > 0)])) - {0}
+    for box in boxes:
+        pad = margin if margin is not None else max(2, int(round(box.height * .3)))
+        x0, y0 = max(0, box.x - pad), max(0, box.y - pad)
+        x1, y1 = box.x + box.width + pad, box.y + box.height + pad
+        for index in np.unique(labels[y0:y1, x0:x1]):
+            if index == 0 or index in protected:
+                continue
+            cx, cy, cw, ch, _ = stats[index]
+            if cx >= x0 and cy >= y0 and cx + cw <= x1 and cy + ch <= y1:
+                result[labels == index] = 0
+    return result
+
+
+def line_removal_length(page_width: int) -> int:
+    """Minimum straight-run length treated as a connector rather than a glyph."""
+    return max(45, int(round(page_width * .03)))
+
+
+def _label_reading(crop: np.ndarray, context: PipelineContext,
+                   modes: tuple[int, ...] = (7, 8)) -> tuple[str, float, list[OCRWord]]:
+    """OCR one small label crop as a single line, then as a single word."""
+    best: tuple[str, float, list[OCRWord]] = ("", 0.0, [])
+    for psm in modes:
+        text, words = read_words_safely(crop, context, psm)
+        text = " ".join(text.split())
+        if not text or not words:
+            continue
+        confidence = sum(word.confidence for word in words) / len(words)
+        if normalize_label(text) and confidence >= .45:
+            return text, confidence, words
+        if confidence > best[1]:
+            best = (text, confidence, words)
+    return best
+
+
+def _glyph_boxes(image: np.ndarray, context: PipelineContext) -> list[tuple[int, int, int, int]]:
+    """Per-character boxes (image coordinates) of alphanumeric glyphs only."""
+    try:
+        raw = pytesseract.image_to_boxes(image, lang=context.settings.OCR_LANGUAGE, config="--psm 7",
+                                         timeout=context.settings.OCR_TIMEOUT_SECONDS)
+    except pytesseract.TesseractError as error:
+        if "timeout" in str(error).lower():
+            raise
+        return []
+    height = image.shape[0]
+    boxes = []
+    for line in raw.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or not parts[0].isalnum():
+            continue
+        x_left, y_bottom, x_right, y_top = map(int, parts[1:5])
+        boxes.append((x_left, height - y_top, max(1, x_right - x_left), max(1, y_top - y_bottom)))
+    return boxes
+
+
+def read_connector_labels(gray: np.ndarray, node_mask: np.ndarray, context: PipelineContext,
+                          stroke: int, max_candidates: int = 40) -> list[OCRWord]:
+    """Read short labels that sit on or beside connectors, one crop at a time.
+
+    Page-level sparse OCR misses small branch labels that a connector runs
+    into or through ("—Yes→"), or reads them as fragments. Here text-like ink
+    blobs near connector lines are isolated (long straight runs removed), and
+    each is read on its own, upscaled, both raw and with line pixels painted
+    out. Only branch vocabulary or confident multi-character words are kept;
+    arrowheads and specks produce neither.
+    """
+    height, width = gray.shape[:2]
+    ink = ink_mask(gray)
+    ink[node_mask > 0] = 0
+    length = line_removal_length(width)
+    lines = cv2.max(cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, length), np.uint8)),
+                    cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((length, 1), np.uint8)))
+    if not np.any(lines):
+        return []
+    text = ink.copy()
+    text[cv2.dilate(lines, np.ones((3, 3), np.uint8)) > 0] = 0
+    text = cv2.morphologyEx(text, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+    gap = max(5, 2 * stroke)
+    grouped = cv2.dilate(text, cv2.getStructuringElement(cv2.MORPH_RECT, (gap, 3)))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(grouped, connectivity=8)
+    near_lines = cv2.dilate(lines, cv2.getStructuringElement(cv2.MORPH_RECT, (61, 61)))
+    background = 255 - int(np.median(255 - gray[ink == 0])) if np.any(ink == 0) else 255
+    candidates = []
+    for index in range(1, count):
+        x, y, w, h, _ = map(int, stats[index])
+        x, w = x + gap // 2, max(1, w - gap + 1)  # undo the grouping dilation
+        y, h = y + 1, max(1, h - 2)
+        if not (12 <= h <= min(140, height * .08) and 10 <= w <= width * .2 and w / h <= 8):
+            continue
+        if h < 1.6 * stroke or np.count_nonzero(text[y:y + h, x:x + w]) < 30:
+            continue
+        if not np.any(near_lines[y:y + h, x:x + w]):
+            continue
+        # A single solid convex blob is an arrowhead or speck, never a word:
+        # letters have holes, gaps or concavities. Skipping these saves most
+        # of the OCR calls on a typical chart.
+        parts, _ = cv2.findContours(text[y:y + h, x:x + w], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        parts = [part for part in parts if cv2.contourArea(part) >= 12]
+        if len(parts) == 1:
+            area = cv2.contourArea(parts[0])
+            hull = cv2.contourArea(cv2.convexHull(parts[0]))
+            if hull > 0 and area / hull >= .8:
+                continue
+        candidates.append((x, y, w, h))
+    candidates = sorted(candidates, key=lambda box: (box[1], box[0]))[:max_candidates]
+    found = []
+    for x, y, w, h in candidates:
+        pad = max(4, int(round(h * .35)))
+        x0, y0, x1, y1 = max(0, x - pad), max(0, y - pad), min(width, x + w + pad), min(height, y + h + pad)
+        raw = gray[y0:y1, x0:x1]
+        cleaned = raw.copy()
+        cleaned[lines[y0:y1, x0:x1] > 0] = background
+        scale = float(np.clip(48.0 / h, 1.0, 4.0))
+        best: tuple[str, float, list[OCRWord]] = ("", 0.0, [])
+        best_image = None
+        images = []
+        for variant in (cleaned, raw):
+            image = cv2.resize(variant, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC) if scale > 1 else variant
+            images.append(cv2.copyMakeBorder(image, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=background))
+        # Cheapest first: single-line mode on both variants, then word mode.
+        for psm in (7, 8):
+            for image in images:
+                reading = _label_reading(image, context, (psm,))
+                if normalize_label(reading[0]):
+                    best, best_image = reading, image
+                    break
+                if reading[1] > best[1]:
+                    best, best_image = reading, image
+            if normalize_label(best[0]):
+                break
+            # Word mode is a second chance for near-misses of branch words only.
+            near_miss = any(difflib.get_close_matches(re.sub(r"[\W_]+", "", reading.casefold()),
+                                                      ("yes", "no", "true", "false"), n=1, cutoff=.5)
+                            for reading in (best[0],) if reading)
+            if not near_miss:
+                break
+        text_value, confidence, words = best
+        words = [word for word in words if any(character.isalnum() for character in word.text)]
+        keep = plausible_connector_label(OCRWord(text_value, confidence, BoundingBox(x, y, w, h)))
+        glyphs = _glyph_boxes(best_image, context) if keep and words and best_image is not None else []
+        if glyphs:
+            # Exact extent of the label's letters: word boxes can include an
+            # adjoining connector stub or arrowhead, which must stay visible.
+            words = [OCRWord(text_value, confidence, BoundingBox(gx, gy, gw, gh)) for gx, gy, gw, gh in glyphs]
+        if words:
+            # Use Tesseract's own glyph extent: the grouped blob may include an
+            # adjacent arrowhead, which must stay in the connector mask.
+            left = min(word.bbox.x for word in words)
+            top = min(word.bbox.y for word in words)
+            right = max(word.bbox.x + word.bbox.width for word in words)
+            bottom = max(word.bbox.y + word.bbox.height for word in words)
+            gx0 = x0 + int((left - 10) / scale)
+            gy0 = y0 + int((top - 10) / scale)
+            gx1 = x0 + int(math.ceil((right - 10) / scale))
+            gy1 = y0 + int(math.ceil((bottom - 10) / scale))
+            gx0, gy0 = max(x0, gx0), max(y0, gy0)
+            gx1, gy1 = min(x1, max(gx1, gx0 + 1)), min(y1, max(gy1, gy0 + 1))
+            x, y, w, h = gx0, gy0, gx1 - gx0, gy1 - gy0
+        word = OCRWord(text_value, confidence, BoundingBox(x, y, w, h))
+        if plausible_connector_label(word):
+            found.append(word)
+    return found
+
+
+def plausible_connector_label(word: OCRWord) -> bool:
+    """Branch vocabulary, or other text read clearly enough to be an annotation.
+
+    Arrowheads and specks near connectors are routinely read as short tokens
+    such as "Vv", "VW" or "Ald" with middling confidence; attaching those to an
+    edge would corrupt its branch label.
+    """
+    text = word.text.strip()
+    alnum = sum(character.isalnum() for character in text)
+    if normalize_label(text):
+        return alnum > 1 or word.confidence >= .8
+    return alnum >= 3 and word.confidence >= .85
+
+
+def trim_word_box(word: OCRWord) -> OCRWord:
+    """Shrink a word box past leading/trailing punctuation-like glyphs.
+
+    Tesseract often fuses an adjacent arrowhead or line end into a label token
+    ("False)", "|Yes"). The box is used to erase the label from the connector
+    mask, so it must not swallow the arrowhead; trim it in proportion to the
+    non-alphanumeric characters at either end.
+    """
+    text = word.text.strip()
+    match = re.match(r"^([\W_]*)(.*?)([\W_]*)$", text, flags=re.UNICODE)
+    if not match or not match.group(2) or not (match.group(1) or match.group(3)) or len(text) < 2:
+        return word
+    per_char = word.bbox.width / len(text)
+    left = int(round(len(match.group(1)) * per_char))
+    right = int(round(len(match.group(3)) * per_char))
+    width = max(1, word.bbox.width - left - right)
+    return OCRWord(word.text, word.confidence,
+                   BoundingBox(word.bbox.x + left, word.bbox.y, width, word.bbox.height))
+
+
+def merge_label_words(page_words: list[OCRWord], targeted: list[OCRWord]) -> list[OCRWord]:
+    """Combine page-level and per-label OCR, preferring branch vocabulary."""
+    page_words = [trim_word_box(word) for word in page_words]  # targeted boxes are glyph-exact
+    def overlaps(a: BoundingBox, b: BoundingBox) -> bool:
+        return not (a.x + a.width < b.x or b.x + b.width < a.x or a.y + a.height < b.y or b.y + b.height < a.y)
+
+    result = []
+    for word in targeted:
+        rivals = [other for other in page_words if overlaps(word.bbox, other.bbox)]
+        if any(normalize_label(other.text) and not normalize_label(word.text) for other in rivals):
+            continue
+        result.append(word)
+    for word in page_words:
+        if not any(overlaps(word.bbox, other.bbox) for other in result):
+            result.append(word)
+    return sorted(result, key=lambda word: (word.bbox.y, word.bbox.x, word.text))
+
+
 class VisionService:
     name = "vision"
 
@@ -800,6 +1262,7 @@ class VisionService:
             return context
         outside = gray.copy()
         removal = np.zeros_like(binary)
+        stroke = estimate_stroke_width(binary)
         # Serialize only OCR configuration/calls, not all Flask requests.
         with OCR_LOCK:
             previous = pytesseract.pytesseract.tesseract_cmd
@@ -814,12 +1277,13 @@ class VisionService:
                     mask = cv2.erode(mask, np.ones((11, 11), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
                     geometry_kind = classify_shape(contour, gray.shape[1])
                     left, top = (int(width * .20), int(height * .20)) if geometry_kind == "connector" else (int(width * .10), int(height * .15))
-                    crop = gray[y + top:y + height - top, x + left:x + width - left]
+                    crop = mask_outside_shape(gray[y:y + height, x:x + width], shifted, stroke)
+                    crop = crop[top:height - top, left:width - left]
                     # The contour bbox is already isolated from neighboring
                     # nodes. Keeping the full crop prevents the fill mask
                     # from erasing anti-aliased glyphs on solid-color nodes.
                     text, words, ocr_candidates = (read_best_words(crop, context, (x + left, y + top), geometry_kind, True))
-                    text = re.sub(r"^\s*[/|\\]+\s*|\s*[/|\\]+\s*$", "", text).strip()
+                    text = re.sub(r"^\s*[/|\\~`]+\s*|\s*[/|\\~`]+\s*$", "", text).strip()
                     text = " ".join(text.split()).translate(str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'"}))
                     # Apply only high-confidence, vocabulary-bounded repairs to
                     # the selected reading. Keep the uncorrected OCR as a review
@@ -863,12 +1327,21 @@ class VisionService:
                 # expand them over arrowheads that terminate at the boundary.
                 hsv_page = cv2.cvtColor(context.page_image, cv2.COLOR_BGR2HSV)
                 colored_fill = float(np.mean(hsv_page[:, :, 1] > 25)) > .02
+                bodies = removal.copy()
                 removal = cv2.dilate(removal, np.ones((1 if colored_fill else 19, 1 if colored_fill else 19), np.uint8))
+                # Outlines of any colour or thickness: grow each node body
+                # outward through ink only, for about one outline width.
+                removal = cv2.bitwise_or(removal, grow_through_ink(bodies, ink_mask(gray), stroke))
                 outside[removal > 0] = 255
                 # Long strokes confuse sparse OCR and can become giant false words.
-                outside_ink = 255 - outside
-                horizontal_lines = cv2.morphologyEx(outside_ink, cv2.MORPH_OPEN, np.ones((1, 45), np.uint8))
-                vertical_lines = cv2.morphologyEx(outside_ink, cv2.MORPH_OPEN, np.ones((45, 1), np.uint8))
+                # Binarize relative to the page background first: on an
+                # off-white page the raw inverted image is non-zero everywhere
+                # and would mark the whole page as "line". The line length is
+                # scaled to the page so bold glyph bars (T, F, E) survive.
+                outside_ink = ink_mask(outside)
+                line_length = line_removal_length(gray.shape[1])
+                horizontal_lines = cv2.morphologyEx(outside_ink, cv2.MORPH_OPEN, np.ones((1, line_length), np.uint8))
+                vertical_lines = cv2.morphologyEx(outside_ink, cv2.MORPH_OPEN, np.ones((line_length, 1), np.uint8))
                 lines = cv2.dilate(cv2.max(horizontal_lines, vertical_lines), np.ones((5, 5), np.uint8))
                 outside[lines > 0] = 255
                 _, words = read_words(outside, context, 11)
@@ -892,9 +1365,13 @@ class VisionService:
                         if max(sw, sh) > max(bw, bh) + 35 and (sx < bx - 15 or sy < by - 15 or sx + sw > bx + bw + 15 or sy + sh > by + bh + 15):
                             on_stroke = True
                             break
-                    if not on_stroke:
-                        filtered.append(word)
-                context.edge_words = filtered
+                    # Branch vocabulary is never an arrowhead misreading, even
+                    # when the connector runs straight into the label.
+                    if not on_stroke or (len(word.text.strip()) > 1 and normalize_label(word.text)):
+                        if plausible_connector_label(word):
+                            filtered.append(word)
+                context.edge_words = merge_label_words(
+                    filtered, read_connector_labels(gray, removal, context, stroke))
             except pytesseract.TesseractNotFoundError:
                 context.diagnose("error", "OCR_UNAVAILABLE", "Tesseract OCR could not be found.", "Install Tesseract separately or set TESSERACT_CMD to its executable.")
             except (pytesseract.TesseractError, RuntimeError) as error:
@@ -918,13 +1395,15 @@ class VisionService:
         # connector arrows on colored-node diagrams.  Build the connector mask
         # from a permissive light-background threshold instead; node interiors
         # are removed immediately below, so colored fills do not become strokes.
-        strokes = np.where(gray < 245, 255, 0).astype(np.uint8)
+        strokes = ink_mask(gray)  # background-relative (tinted pages)
         strokes[removal > 0] = 0
-        # Remove only plausible text boxes, not arbitrary line-like OCR artifacts.
-        for word in context.edge_words:
-            if any(character.isalnum() for character in word.text):
-                box = word.bbox
-                strokes[max(0, box.y - 2):box.y + box.height + 2, max(0, box.x - 2):box.x + box.width + 2] = 0
+        # Remove recognised label glyphs, not arbitrary line-like OCR artifacts.
+        # Only ink components lying wholly inside a label box are erased: a
+        # connector or arrowhead that continues outside the box is kept even
+        # when OCR fused it into the label ("<Yes-").
+        strokes = erase_enclosed_components(
+            strokes, [word.bbox for word in context.edge_words if any(ch.isalnum() for ch in word.text)],
+            protect=removal)
         context.stroke_mask = cv2.morphologyEx(strokes, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
         return context
 

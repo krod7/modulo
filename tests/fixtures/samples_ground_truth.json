@@ -1,0 +1,174 @@
+{
+  "_about": "Hand-annotated structure of the ten flowcharts in samples/. Centres are in original-image pixels; a recognised node matches an expected node when the expected centre lies inside its bounding box. Labels use the canonical Yes/No vocabulary (True->Yes, False->No). 'notation_supported' marks charts written in Modulo's executable notation, which must also produce pseudocode; the others are natural-language charts whose success criterion is a correct recognised graph.",
+  "sample1": {
+    "image": "sample1.jpg",
+    "notation_supported": false,
+    "nodes": {
+      "start": {"center": [168, 48], "type": "terminal", "text": "Start"},
+      "import": {"center": [168, 156], "type": "process", "text": "Import random module"},
+      "set_true": {"center": [168, 287], "type": "process", "text": "Set keep_trying to True"},
+      "repeat": {"center": [168, 437], "type": "decision", "text": "Repeat if keep_trying is True"},
+      "bye": {"center": [168, 610], "type": "output", "text": "Display \"Bye now\""},
+      "end": {"center": [168, 738], "type": "terminal", "text": "End"},
+      "chance": {"center": [478, 55], "type": "output", "text": "Display \"There is a 75% chance you can do the move!!\""},
+      "wait": {"center": [478, 166], "type": "process", "text": "Wait for user to press enter"},
+      "generate": {"center": [478, 277], "type": "process", "text": "Generate a random number between 1 and 100"},
+      "assign": {"center": [478, 388], "type": "process", "text": "Assign it to the success variable"},
+      "show_success": {"center": [478, 503], "type": "output", "text": "Display the success variable"},
+      "check": {"center": [478, 650], "type": "decision", "text": "Is success less than or equal to 75?"},
+      "wild": {"center": [754, 650], "type": "output", "text": "Display \"The crowd goes wild!\""},
+      "stumbled": {"center": [478, 810], "type": "output", "text": "Display \"You stumbled!\""},
+      "set_false": {"center": [754, 810], "type": "process", "text": "Set keep_trying to False"}
+    },
+    "edges": [
+      ["start", "import", null], ["import", "set_true", null], ["set_true", "repeat", null],
+      ["repeat", "chance", "Yes"], ["repeat", "bye", "No"], ["bye", "end", null],
+      ["chance", "wait", null], ["wait", "generate", null], ["generate", "assign", null],
+      ["assign", "show_success", null], ["show_success", "check", null],
+      ["check", "wild", "Yes"], ["check", "stumbled", "No"], ["wild", "set_false", null],
+      ["stumbled", "repeat", null], ["set_false", "repeat", null]
+    ]
+  },
+  "sample2": {
+    "image": "sample2.png",
+    "notation_supported": true,
+    "nodes": {
+      "start": {"center": [450, 103], "type": "terminal", "text": "Start"},
+      "assign": {"center": [450, 293], "type": "process", "text": "amount = 17"},
+      "out": {"center": [450, 482], "type": "output", "text": "Output amount"},
+      "end": {"center": [450, 672], "type": "terminal", "text": "End"}
+    },
+    "edges": [["start", "assign", null], ["assign", "out", null], ["out", "end", null]]
+  },
+  "sample3": {
+    "image": "sample3.png",
+    "notation_supported": true,
+    "nodes": {
+      "start": {"center": [500, 80], "type": "terminal", "text": "Start"},
+      "init": {"center": [500, 260], "type": "process", "text": "count = 3"},
+      "loop": {"center": [500, 485], "type": "iteration", "text": "WHILE count > 0"},
+      "dec": {"center": [500, 762], "type": "process", "text": "count = count - 1"},
+      "end": {"center": [190, 1000], "type": "terminal", "text": "End"}
+    },
+    "edges": [["start", "init", null], ["init", "loop", null], ["loop", "dec", "Yes"],
+              ["loop", "end", "No"], ["dec", "loop", null]]
+  },
+  "sample4": {
+    "image": "sample4.png",
+    "notation_supported": true,
+    "nodes": {
+      "start": {"center": [600, 80], "type": "terminal", "text": "Start"},
+      "in": {"center": [600, 262], "type": "input", "text": "Input score:int"},
+      "dec": {"center": [600, 495], "type": "decision", "text": "score > 60"},
+      "one": {"center": [270, 762], "type": "output", "text": "Output 1"},
+      "zero": {"center": [950, 762], "type": "output", "text": "Output 0"},
+      "end": {"center": [600, 1020], "type": "terminal", "text": "End"}
+    },
+    "edges": [["start", "in", null], ["in", "dec", null], ["dec", "one", "Yes"], ["dec", "zero", "No"],
+              ["one", "end", null], ["zero", "end", null]]
+  },
+  "sample5": {
+    "image": "sample5.png",
+    "notation_supported": true,
+    "nodes": {
+      "start": {"center": [90, 39], "type": "terminal", "text": "Start"},
+      "in": {"center": [90, 156], "type": "input", "text": "Input variable: Number"},
+      "dec": {"center": [90, 273], "type": "decision", "text": "If Number%2=0"},
+      "odd": {"center": [287, 278], "type": "output", "text": "Print: \"Number is odd\""},
+      "even": {"center": [90, 409], "type": "output", "text": "Print: \"number is even\""},
+      "end": {"center": [90, 519], "type": "terminal", "text": "End"}
+    },
+    "edges": [["start", "in", null], ["in", "dec", null], ["dec", "odd", "No"], ["dec", "even", "Yes"],
+              ["even", "end", null]]
+  },
+  "sample6": {
+    "image": "sample6.png",
+    "notation_supported": true,
+    "nodes": {
+      "start": {"center": [370, 85], "type": "terminal", "text": "START"},
+      "in": {"center": [370, 234], "type": "input", "text": "Input Number"},
+      "dec": {"center": [370, 432], "type": "decision", "text": "If number % 2 = = 0"},
+      "even": {"center": [175, 607], "type": "output", "text": "Display \"Even Number\""},
+      "odd": {"center": [608, 602], "type": "output", "text": "Display \"Odd Number\""},
+      "end": {"center": [378, 747], "type": "terminal", "text": "END"}
+    },
+    "edges": [["start", "in", null], ["in", "dec", null], ["dec", "even", "Yes"], ["dec", "odd", "No"],
+              ["even", "end", null], ["odd", "end", null]]
+  },
+  "sample7": {
+    "image": "sample7.png",
+    "notation_supported": true,
+    "nodes": {
+      "start": {"center": [91, 62], "type": "terminal", "text": "start"},
+      "prompt": {"center": [91, 181], "type": "output", "text": "print \"Enter a number\""},
+      "pos": {"center": [91, 302], "type": "decision", "text": "if num > 0"},
+      "greater": {"center": [261, 302], "type": "output", "text": "print \"Greater than 0\""},
+      "neg": {"center": [91, 452], "type": "decision", "text": "if num < 0"},
+      "less": {"center": [261, 452], "type": "output", "text": "print \"Less than 0\""},
+      "done": {"center": [91, 581], "type": "output", "text": "print \"Done\""},
+      "end": {"center": [91, 702], "type": "terminal", "text": "end"}
+    },
+    "edges": [["start", "prompt", null], ["prompt", "pos", null], ["pos", "greater", "Yes"],
+              ["pos", "neg", "No"], ["greater", "neg", null], ["neg", "less", "Yes"],
+              ["neg", "done", "No"], ["less", "done", null], ["done", "end", null]]
+  },
+  "sample8": {
+    "image": "sample8.jpg",
+    "notation_supported": false,
+    "nodes": {
+      "start": {"center": [730, 115], "type": "terminal", "text": "Start"},
+      "declare": {"center": [730, 250], "type": "process", "text": "Declare variables a, b and c"},
+      "read": {"center": [730, 385], "type": "input", "text": "Read a, b and c"},
+      "ab": {"center": [730, 570], "type": "decision", "text": "is a > b?"},
+      "bc": {"center": [428, 812], "type": "decision", "text": "is b > c?"},
+      "ac": {"center": [1032, 812], "type": "decision", "text": "is a > c?"},
+      "pb": {"center": [128, 1000], "type": "output", "text": "print b"},
+      "pc": {"center": [730, 1000], "type": "output", "text": "print c"},
+      "pa": {"center": [1332, 1000], "type": "output", "text": "print a"},
+      "stop": {"center": [730, 1198], "type": "terminal", "text": "Stop"}
+    },
+    "edges": [["start", "declare", null], ["declare", "read", null], ["read", "ab", null],
+              ["ab", "bc", "No"], ["ab", "ac", "Yes"], ["bc", "pb", "Yes"], ["bc", "pc", "No"],
+              ["ac", "pc", "No"], ["ac", "pa", "Yes"], ["pb", "stop", null], ["pc", "stop", null],
+              ["pa", "stop", null]]
+  },
+  "sample9": {
+    "image": "sample9.jpg",
+    "notation_supported": true,
+    "nodes": {
+      "start": {"center": [540, 134], "type": "terminal", "text": "Start"},
+      "in": {"center": [540, 397], "type": "input", "text": "Input number"},
+      "dec": {"center": [540, 658], "type": "decision", "text": "num < 0"},
+      "calc": {"center": [727, 977], "type": "process", "text": "Calculate factorial"},
+      "neg": {"center": [352, 1200], "type": "output", "text": "Print \"Factorial is not defined for negative numbers"},
+      "fact": {"center": [727, 1200], "type": "output", "text": "Print factorial"},
+      "end": {"center": [540, 1462], "type": "terminal", "text": "End"}
+    },
+    "edges": [["start", "in", null], ["in", "dec", null], ["dec", "calc", "No"], ["dec", "neg", "Yes"],
+              ["calc", "fact", null], ["neg", "end", null], ["fact", "end", null]]
+  },
+  "sample10": {
+    "image": "sample10.jpg",
+    "notation_supported": false,
+    "nodes": {
+      "start": {"center": [124, 51], "type": "terminal", "text": "Start"},
+      "s12": {"center": [295, 51], "type": "process", "text": "S = 12"},
+      "enter": {"center": [295, 146], "type": "input", "text": "enter ρ"},
+      "even": {"center": [295, 250], "type": "decision", "text": "Is ρ even?"},
+      "inc1": {"center": [124, 250], "type": "process", "text": "ρ = ρ + 1"},
+      "prime": {"center": [295, 392], "type": "decision", "text": "Is ρ prime?"},
+      "inc2": {"center": [465, 392], "type": "process", "text": "ρ = ρ + 2"},
+      "lt": {"center": [295, 532], "type": "decision", "text": "Is ρ < S?"},
+      "dec1": {"center": [124, 532], "type": "process", "text": "S = S - 1"},
+      "decp": {"center": [465, 532], "type": "process", "text": "S = S - ρ"},
+      "zero": {"center": [124, 626], "type": "decision", "text": "Does S = 0?"},
+      "out": {"center": [295, 688], "type": "output", "text": "output ρ"},
+      "stop": {"center": [465, 688], "type": "terminal", "text": "Stop"}
+    },
+    "edges": [["start", "s12", null], ["s12", "enter", null], ["enter", "even", null],
+              ["even", "inc1", "Yes"], ["even", "prime", "No"], ["prime", "inc2", "No"],
+              ["prime", "lt", "Yes"], ["lt", "decp", "Yes"], ["lt", "dec1", "No"],
+              ["decp", "inc2", null], ["inc2", "even", null], ["dec1", "zero", null],
+              ["zero", "out", "Yes"], ["zero", "inc2", "No"], ["out", "stop", null]]
+  }
+}

@@ -22,6 +22,10 @@ class Settings:
     MAX_WORKING_HEIGHT: int = field(default_factory=lambda: integer("MAX_WORKING_HEIGHT", 6000))
     MAX_NODES: int = field(default_factory=lambda: integer("MAX_NODES", 100))
     ARROW_ATTACH_DISTANCE: int = field(default_factory=lambda: integer("ARROW_ATTACH_DISTANCE", 24))
+    # A connector whose closest approach to a node is within this many
+    # thousandths of the page width touches it; farther contacts must also be
+    # a genuine stroke end (not a line running past the node).
+    CONNECTOR_TOUCH_PERMILLE: int = field(default_factory=lambda: integer("CONNECTOR_TOUCH_PERMILLE", 22))
     STORE_TTL_SECONDS: int = field(default_factory=lambda: integer("STORE_TTL_SECONDS", 1800))
     STORE_MAX_ENTRIES: int = field(default_factory=lambda: integer("STORE_MAX_ENTRIES", 50))
     STORE_MAX_BYTES: int = field(default_factory=lambda: integer("STORE_MAX_BYTES", 268435456))

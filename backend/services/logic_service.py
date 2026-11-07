@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 import networkx as nx
 from backend.models import Edge, FlowGraph, IRNode, Node, PipelineContext
-from backend.notation import FOR, INPUT, normalize_condition, normalize_label
+from backend.notation import terminal_role, FOR, INPUT, normalize_condition, normalize_label
 from backend.services.validation_service import branch_terminal_outputs
 
 class LogicService:
@@ -138,9 +138,9 @@ class LogicService:
             node = nodes[cursor]
             if node.type in ("terminal", "connector"):
                 emitted.add(cursor)
-                if node.type == "terminal" and node.text.strip().casefold() == "start":
+                if node.type == "terminal" and terminal_role(node.text) == "start":
                     result.append(IRNode("Start", [cursor]))
-                elif node.type == "terminal" and node.text.strip().casefold() == "end":
+                elif node.type == "terminal" and terminal_role(node.text) == "end":
                     result.append(IRNode("End", [cursor]))
                 cursor = outgoing[cursor][0].target if outgoing.get(cursor) else None
                 continue
