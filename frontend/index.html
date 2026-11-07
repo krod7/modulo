@@ -10,8 +10,8 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="manifest" href="/icons/site.webmanifest">
 <meta name="theme-color" content="#07162F">
-<link rel="stylesheet" href="/css/styles.css?v=ui-revise-6">
-<script type="module" src="/js/app.js?v=ui-revise-6">
+<link rel="stylesheet" href="/css/styles.css?v=ui-revise-8">
+<script type="module" src="/js/app.js?v=ui-revise-8">
 </script>
 </head>
 <body>
@@ -98,8 +98,12 @@
 <p id="review-hint" class="review-hint" hidden>Only Flagged OCR Text And Branch Labels Can Be Edited. Corrections Are Revalidated Before Approval.</p>
 <div id="node-list" class="node-list" aria-label="Recognized pseudocode nodes">
 </div>
-<details>
-<summary>Detected Connections</summary>
+<details class="connections" id="connections-panel">
+<summary>
+<span class="connections-chevron" aria-hidden="true">▸</span>
+<span class="connections-title">Detected Connections</span>
+<span class="connections-cue"></span>
+</summary>
 <div id="edge-list">
 </div>
 </details>
