@@ -10,6 +10,7 @@ export function validateFile(file, maxMB = MAX_UPLOAD_MB) {
 export function bindUpload(onSelect) {
   const input = document.getElementById('file-input');
   const panel = document.getElementById('diagram-panel');
+  const dropZone = document.getElementById('diagram-empty');
   const choose = document.getElementById('choose-button');
   let dragDepth = 0;
 
@@ -18,25 +19,25 @@ export function bindUpload(onSelect) {
     if (input.files[0]) onSelect(input.files[0]);
   });
 
-  panel.addEventListener('dragenter', event => {
+  dropZone.addEventListener('dragenter', event => {
     event.preventDefault();
     dragDepth += 1;
-    panel.classList.add('dragging');
+    dropZone.classList.add('dragging');
   });
-  panel.addEventListener('dragover', event => {
+  dropZone.addEventListener('dragover', event => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
-    panel.classList.add('dragging');
+    dropZone.classList.add('dragging');
   });
-  panel.addEventListener('dragleave', event => {
+  dropZone.addEventListener('dragleave', event => {
     event.preventDefault();
     dragDepth = Math.max(0, dragDepth - 1);
-    if (!dragDepth) panel.classList.remove('dragging');
+    if (!dragDepth) dropZone.classList.remove('dragging');
   });
-  panel.addEventListener('drop', event => {
+  dropZone.addEventListener('drop', event => {
     event.preventDefault();
     dragDepth = 0;
-    panel.classList.remove('dragging');
+    dropZone.classList.remove('dragging');
     if (event.dataTransfer.files.length !== 1) {
       document.getElementById('file-error').textContent = 'Choose exactly one flowchart at a time.';
       return;
