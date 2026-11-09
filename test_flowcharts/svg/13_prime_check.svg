@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880.0" height="1186.0" viewBox="0 0 880.0 1186.0">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="17" fill="#000" text-anchor="middle">
+<rect x="195.0" y="60.0" width="170" height="56" rx="28.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="280.0" y="94.0">Start</text>
+<polygon points="181.0,166.0 405.0,166.0 379.0,230.0 155.0,230.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="280.0" y="204.0">Input n</text>
+<polygon points="280.0,278.0 425.0,338.0 280.0,398.0 135.0,338.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="280.0" y="344.0">n &lt; 2?</text>
+<polygon points="521.0,306.0 745.0,306.0 719.0,370.0 495.0,370.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="620.0" y="344.0">Output Not Prime</text>
+<rect x="145.0" y="456.0" width="270" height="64" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="280.0" y="494.0">i = 2</text>
+<polygon points="280.0,568.0 425.0,628.0 280.0,688.0 135.0,628.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="280.0" y="634.0">i * i &lt;= n?</text>
+<polygon points="521.0,596.0 745.0,596.0 719.0,660.0 495.0,660.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="620.0" y="634.0">Output Prime</text>
+<polygon points="280.0,738.0 425.0,798.0 280.0,858.0 135.0,798.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="280.0" y="804.0">n % i == 0?</text>
+<polygon points="521.0,766.0 745.0,766.0 719.0,830.0 495.0,830.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="620.0" y="804.0">Output Not Prime</text>
+<rect x="145.0" y="916.0" width="270" height="64" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="280.0" y="954.0">i = i + 1</text>
+<rect x="195.0" y="1070.0" width="170" height="56" rx="28.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="280.0" y="1104.0">End</text>
+<polyline points="280.0,116.0 280.0,166.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="280.0,166.0 273.5,151.0 286.5,151.0" fill="#000"/>
+<polyline points="280.0,230.0 280.0,278.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="280.0,278.0 273.5,263.0 286.5,263.0" fill="#000"/>
+<polyline points="425.0,338.0 508.0,338.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="508.0,338.0 493.0,344.5 493.0,331.5" fill="#000"/>
+<text x="435.0" y="328.0" text-anchor="start" font-size="16" font-weight="bold">Yes</text>
+<polyline points="280.0,398.0 280.0,456.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="280.0,456.0 273.5,441.0 286.5,441.0" fill="#000"/>
+<text x="290.0" y="420.0" text-anchor="start" font-size="16" font-weight="bold">No</text>
+<polyline points="280.0,520.0 280.0,568.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="280.0,568.0 273.5,553.0 286.5,553.0" fill="#000"/>
+<polyline points="425.0,628.0 508.0,628.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="508.0,628.0 493.0,634.5 493.0,621.5" fill="#000"/>
+<text x="435.0" y="618.0" text-anchor="start" font-size="16" font-weight="bold">No</text>
+<polyline points="280.0,688.0 280.0,738.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="280.0,738.0 273.5,723.0 286.5,723.0" fill="#000"/>
+<text x="290.0" y="710.0" text-anchor="start" font-size="16" font-weight="bold">Yes</text>
+<polyline points="425.0,798.0 508.0,798.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="508.0,798.0 493.0,804.5 493.0,791.5" fill="#000"/>
+<text x="435.0" y="788.0" text-anchor="start" font-size="16" font-weight="bold">Yes</text>
+<polyline points="280.0,858.0 280.0,916.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="280.0,916.0 273.5,901.0 286.5,901.0" fill="#000"/>
+<text x="290.0" y="880.0" text-anchor="start" font-size="16" font-weight="bold">No</text>
+<polyline points="280.0,980.0 280.0,1023.0 60.0,1023.0 60.0,544.0 280.0,544.0 280.0,568.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="280.0,568.0 273.5,553.0 286.5,553.0" fill="#000"/>
+<polyline points="732.0,338.0 820.0,338.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polyline points="732.0,628.0 820.0,628.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polyline points="732.0,798.0 820.0,798.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polyline points="820.0,338.0 820.0,1098.0 365.0,1098.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="365.0,1098.0 380.0,1091.5 380.0,1104.5" fill="#000"/>
+</g></svg>

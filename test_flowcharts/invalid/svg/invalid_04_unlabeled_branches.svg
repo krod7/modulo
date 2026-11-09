@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="770.0" height="686.0" viewBox="0 0 770.0 686.0">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="17" fill="#000" text-anchor="middle">
+<rect x="300.0" y="60.0" width="170" height="56" rx="28.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="385.0" y="94.0">Start</text>
+<polygon points="286.0,166.0 510.0,166.0 484.0,230.0 260.0,230.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="385.0" y="204.0">Input n</text>
+<polygon points="385.0,268.0 530.0,328.0 385.0,388.0 240.0,328.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="385.0" y="334.0">n % 2 == 0?</text>
+<polygon points="86.0,446.0 310.0,446.0 284.0,510.0 60.0,510.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="185.0" y="484.0">Output Even</text>
+<polygon points="486.0,446.0 710.0,446.0 684.0,510.0 460.0,510.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="585.0" y="484.0">Output Odd</text>
+<rect x="300.0" y="570.0" width="170" height="56" rx="28.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="385.0" y="604.0">End</text>
+<polyline points="385.0,116.0 385.0,166.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="385.0,166.0 378.5,151.0 391.5,151.0" fill="#000"/>
+<polyline points="385.0,230.0 385.0,268.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="385.0,268.0 378.5,253.0 391.5,253.0" fill="#000"/>
+<polyline points="240.0,328.0 185.0,328.0 185.0,446.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="185.0,446.0 178.5,431.0 191.5,431.0" fill="#000"/>
+<polyline points="530.0,328.0 585.0,328.0 585.0,446.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="585.0,446.0 578.5,431.0 591.5,431.0" fill="#000"/>
+<polyline points="185.0,510.0 185.0,598.0 300.0,598.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="300.0,598.0 285.0,604.5 285.0,591.5" fill="#000"/>
+<polyline points="585.0,510.0 585.0,598.0 470.0,598.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="470.0,598.0 485.0,591.5 485.0,604.5" fill="#000"/>
+</g></svg>

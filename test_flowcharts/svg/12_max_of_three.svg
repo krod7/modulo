@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="740.0" height="966.0" viewBox="0 0 740.0 966.0">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="17" fill="#000" text-anchor="middle">
+<rect x="120.0" y="60.0" width="170" height="56" rx="28.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="94.0">Start</text>
+<polygon points="106.0,166.0 330.0,166.0 304.0,230.0 80.0,230.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="204.0">Input a, b, c</text>
+<rect x="70.0" y="276.0" width="270" height="64" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="314.0">max = a</text>
+<polygon points="205.0,388.0 350.0,448.0 205.0,508.0 60.0,448.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="454.0">b &gt; max?</text>
+<rect x="410.0" y="416.0" width="270" height="64" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="545.0" y="454.0">max = b</text>
+<polygon points="205.0,568.0 350.0,628.0 205.0,688.0 60.0,628.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="634.0">c &gt; max?</text>
+<rect x="410.0" y="596.0" width="270" height="64" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="545.0" y="634.0">max = c</text>
+<polygon points="106.0,736.0 330.0,736.0 304.0,800.0 80.0,800.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="774.0">Output max</text>
+<rect x="120.0" y="850.0" width="170" height="56" rx="28.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="884.0">End</text>
+<polyline points="205.0,116.0 205.0,166.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,166.0 198.5,151.0 211.5,151.0" fill="#000"/>
+<polyline points="205.0,230.0 205.0,276.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,276.0 198.5,261.0 211.5,261.0" fill="#000"/>
+<polyline points="205.0,340.0 205.0,388.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,388.0 198.5,373.0 211.5,373.0" fill="#000"/>
+<polyline points="350.0,448.0 410.0,448.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="410.0,448.0 395.0,454.5 395.0,441.5" fill="#000"/>
+<text x="360.0" y="438.0" text-anchor="start" font-size="16" font-weight="bold">Yes</text>
+<polyline points="205.0,508.0 205.0,568.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,568.0 198.5,553.0 211.5,553.0" fill="#000"/>
+<text x="215.0" y="530.0" text-anchor="start" font-size="16" font-weight="bold">No</text>
+<polyline points="545.0,480.0 545.0,543.0 205.0,543.0 205.0,568.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,568.0 198.5,553.0 211.5,553.0" fill="#000"/>
+<polyline points="350.0,628.0 410.0,628.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="410.0,628.0 395.0,634.5 395.0,621.5" fill="#000"/>
+<text x="360.0" y="618.0" text-anchor="start" font-size="16" font-weight="bold">Yes</text>
+<polyline points="205.0,688.0 205.0,736.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,736.0 198.5,721.0 211.5,721.0" fill="#000"/>
+<text x="215.0" y="710.0" text-anchor="start" font-size="16" font-weight="bold">No</text>
+<polyline points="545.0,660.0 545.0,768.0 317.0,768.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="317.0,768.0 332.0,761.5 332.0,774.5" fill="#000"/>
+<polyline points="205.0,800.0 205.0,850.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,850.0 198.5,835.0 211.5,835.0" fill="#000"/>
+</g></svg>

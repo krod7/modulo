@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390.0" height="620.0" viewBox="0 0 390.0 620.0">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="17" fill="#000" text-anchor="middle">
+<rect x="110.0" y="60.0" width="170" height="56" rx="28.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="195.0" y="94.0">Start</text>
+<polygon points="96.0,166.0 320.0,166.0 294.0,230.0 70.0,230.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="195.0" y="204.0">Input a</text>
+<polygon points="96.0,276.0 320.0,276.0 294.0,340.0 70.0,340.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="195.0" y="314.0">Input b</text>
+<rect x="60.0" y="386.0" width="270" height="64" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="195.0" y="424.0">sum = a + b</text>
+<polygon points="96.0,496.0 320.0,496.0 294.0,560.0 70.0,560.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="195.0" y="534.0">Output sum</text>
+<polyline points="195.0,116.0 195.0,166.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="195.0,166.0 188.5,151.0 201.5,151.0" fill="#000"/>
+<polyline points="195.0,230.0 195.0,276.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="195.0,276.0 188.5,261.0 201.5,261.0" fill="#000"/>
+<polyline points="195.0,340.0 195.0,386.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="195.0,386.0 188.5,371.0 201.5,371.0" fill="#000"/>
+<polyline points="195.0,450.0 195.0,496.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="195.0,496.0 188.5,481.0 201.5,481.0" fill="#000"/>
+</g></svg>

@@ -1,0 +1,20 @@
+file_stem,type,description,constructs_tested
+01_sequence_sum,valid,"Linear sequence: input, assignment, output",sequence; input; assignment; output
+02_if_else_even_odd,valid,Simple if/else with two branches merging,if-else; modulo
+03_if_only_adult,valid,If with no else (No arrow skips to End),if; skip branch
+04_else_if_chain_grade,valid,Chained else-if ladder with 4 outcomes,if / elif / elif / else; branch merge
+05_while_loop_count,valid,Pre-test while loop with counter,while; increment
+06_for_loop_sum,valid,Counting for-style loop accumulating a sum,for-style loop; accumulator
+07_do_while_guess,valid,"Post-test (do-while) loop, condition at bottom",do-while; input inside loop
+08_nested_loops_table,valid,"Nested loops (outer i, inner j)",nested while/for; two loop-backs
+09_loop_with_if_even_sum,valid,"If inside a loop, false branch rejoins increment",loop + conditional; branch rejoin
+10_early_exit_first_multiple,valid,Loop with early exit from inside a decision,break-style exit; loop + if
+11_factorial,valid,Factorial using a loop,input; while; multiplication accumulator
+12_max_of_three,valid,Sequential if statements updating a variable,consecutive ifs; no else
+13_prime_check,valid,"Prime test: if + loop + nested if, several exits",nested decisions in loop; multiple outputs
+14_fibonacci,valid,Fibonacci with temp swap in a loop,loop with multi-statement body
+15_login_retry,valid,Retry loop with a counter and an inner decision,while + inner if; two terminal outputs
+invalid_01_missing_end,invalid,No End terminator after the last Output,validation: missing End
+invalid_02_decision_missing_branch,invalid,Decision has only a Yes outlet; No arrow missing,validation: dangling decision branch
+invalid_03_orphan_node,invalid,A disconnected process box not on any path,validation: unreachable node
+invalid_04_unlabeled_branches,invalid,Decision outlets carry no Yes/No labels,validation: ambiguous branches

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="410.0" height="676.0" viewBox="0 0 410.0 676.0">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="17" fill="#000" text-anchor="middle">
+<rect x="120.0" y="60.0" width="170" height="56" rx="28.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="94.0">Start</text>
+<polygon points="106.0,166.0 330.0,166.0 304.0,230.0 80.0,230.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="204.0">Input age</text>
+<polygon points="205.0,268.0 350.0,328.0 205.0,388.0 60.0,328.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="334.0">age &gt;= 18?</text>
+<polygon points="106.0,446.0 330.0,446.0 304.0,510.0 80.0,510.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="484.0">Output Adult</text>
+<rect x="120.0" y="560.0" width="170" height="56" rx="28.0" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="205.0" y="594.0">End</text>
+<polyline points="205.0,116.0 205.0,166.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,166.0 198.5,151.0 211.5,151.0" fill="#000"/>
+<polyline points="205.0,230.0 205.0,268.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,268.0 198.5,253.0 211.5,253.0" fill="#000"/>
+<polyline points="205.0,388.0 205.0,446.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,446.0 198.5,431.0 211.5,431.0" fill="#000"/>
+<text x="215.0" y="410.0" text-anchor="start" font-size="16" font-weight="bold">Yes</text>
+<polyline points="205.0,510.0 205.0,560.0" fill="none" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="205.0,560.0 198.5,545.0 211.5,545.0" fill="#000"/>
+</g></svg>
