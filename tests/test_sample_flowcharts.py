@@ -41,7 +41,7 @@ def test_generated_unseen_charts_have_correct_graphs(tmp_path):
     """Charts in styles never used for tuning: every graph must be exact.
 
     Node text is reported but not asserted here; one font's "i = i + 1" is a
-    known Tesseract misreading (see RECOGNITION_FIXES.md).
+    known Tesseract misreading (see docs/RECOGNITION_FIXES.md).
     """
     from generate_unseen_flowcharts import main as generate
 
