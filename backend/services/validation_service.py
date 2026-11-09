@@ -120,6 +120,43 @@ def _is_descriptive_chart(graph) -> bool:
     )
 
 
+def _promote_cycle_headers(graph, directed, nodes) -> None:
+    """Treat a decision as an iteration header when its graph has a real back edge.
+
+    Educational flowcharts frequently draw WHILE/FOR headers as diamonds. A
+    cycle-backed decision is distinguishable from an ordinary if/else because
+    one of its outgoing branches can return to that same node. Promotion is
+    topology-based and does not alter acyclic decision charts.
+    """
+    def returns_without_nested_control(start_id, target_id):
+        pending = [start_id]
+        seen = set()
+        while pending:
+            current = pending.pop()
+            if current == target_id:
+                return True
+            if current in seen:
+                continue
+            seen.add(current)
+            if current != start_id and nodes[current].type in {"decision", "iteration"}:
+                continue
+            pending.extend(next_id for next_id in directed.successors(current) if next_id not in seen)
+        return False
+
+    for node in graph.nodes:
+        if node.type != "decision":
+            continue
+        for edge in directed.out_edges(node.id):
+            if edge[1] == node.id:
+                continue
+            if returns_without_nested_control(edge[1], node.id):
+                text = (node.text or "").strip().rstrip("?").strip()
+                if not text.upper().startswith(("WHILE ", "FOR ")):
+                    node.text = f"WHILE {text}"
+                node.type = "iteration"
+                break
+
+
 class ValidationService:
     name = "validation"
 
@@ -197,6 +234,7 @@ class ValidationService:
                 context.diagnose("error", "UNPAIRED_CONNECTOR", "A connector label does not occur exactly twice.", "Use two circles with the same label: one entry and one exit.", pairs[label])
         if graph.start_id:
             reachable = nx.descendants(directed, graph.start_id) | {graph.start_id}
+            _promote_cycle_headers(graph, directed, nodes)
             unreachable = [node.id for node in graph.nodes if node.id not in reachable]
             if unreachable:
                 context.diagnose("error", "UNREACHABLE_NODE", "Some shapes cannot be reached from Start.", "Connect these shapes to the main flow or remove them.", unreachable)
@@ -218,7 +256,12 @@ class ValidationService:
                 ids = [node.id for node in graph.nodes if node.id in component]
                 entries = {target for source, target in directed.edges if target in component and source not in component}
                 headers = [node_id for node_id in ids if nodes[node_id].type == "iteration"]
-                if len(entries) != 1 or not headers or next(iter(entries)) not in headers:
+                entry = next(iter(entries), None)
+                valid_do_while_entry = (
+                    len(entries) == 1 and bool(headers) and entry not in headers
+                    and any(nx.has_path(directed, entry, header) for header in headers)
+                )
+                if len(entries) != 1 or not headers or (entry not in headers and not valid_do_while_entry):
                     context.diagnose(
                         "warning" if descriptive_chart else "error", "UNSTRUCTURED_FLOW",
                         "A cycle has multiple entries or no iteration header at its entry.",

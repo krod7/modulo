@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque, defaultdict
 from dataclasses import dataclass
 import math
+import re
 import cv2
 import numpy as np
 
@@ -736,6 +737,95 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
             inferred_count += 1
     return inferred_count
 
+
+def repair_semantic_loop_back_edges(context: PipelineContext, graph: FlowGraph) -> int:
+    """Recover a lost loop-back from an unmistakable increment/update step."""
+    nodes = {node.id: node for node in graph.nodes}
+    adjacency = defaultdict(list)
+    for edge in graph.edges:
+        adjacency[edge.source].append(edge.target)
+
+    def distance(start, target):
+        queue, seen = [(start, 0)], {start}
+        while queue:
+            current, depth = queue.pop(0)
+            if current == target:
+                return depth
+            for nxt in adjacency[current]:
+                if nxt not in seen:
+                    seen.add(nxt); queue.append((nxt, depth + 1))
+        return None
+
+    repaired = 0
+    for source in graph.nodes:
+        if source.type not in {"process", "output"}:
+            continue
+        text = (source.text or "").replace(" ", "").casefold()
+        variable_match = re.match(r"([a-z_]\w*)=", text)
+        variable = variable_match.group(1) if variable_match else ""
+        is_increment = any(token in text for token in ("+1", "+l", "+i")) or bool(
+            re.search(r"=i(?:t)?[l1]$", text)
+        )
+        candidates = []
+        for target in graph.nodes:
+            if target.type not in {"decision", "iteration"} or target.id == source.id:
+                continue
+            path_distance = distance(target.id, source.id)
+            if is_increment and path_distance is not None:
+                candidates.append((path_distance, target))
+            elif not is_increment and target.bbox.y > source.bbox.y and variable and variable in (target.text or "").replace(" ", "").casefold():
+                route = [
+                    (source.bbox.x + source.bbox.width // 2, source.bbox.y + source.bbox.height),
+                    (target.bbox.x + target.bbox.width // 2, target.bbox.y),
+                ]
+                if route_has_visible_stroke(context.stroke_mask, route, min_coverage=0.35, min_segments=1):
+                    candidates.append((-(target.bbox.y - source.bbox.y), target))
+        if not is_increment and not candidates:
+            # OCR may lose the variable from a compact condition such as
+            # ``<= 3?``. A unique aligned control directly below the step is
+            # still safe when the visible corridor contains no node.
+            below = [target for target in graph.nodes
+                     if target.type in {"decision", "iteration"}
+                     and target.bbox.y > source.bbox.y
+                     and abs(target.bbox.center[0] - source.bbox.center[0]) < 0.22 * max(source.bbox.width, target.bbox.width)]
+            if len(below) == 1:
+                target = below[0]
+                route = [(source.bbox.center[0], source.bbox.y + source.bbox.height),
+                         (target.bbox.center[0], target.bbox.y)]
+                if route_has_visible_stroke(context.stroke_mask, route, min_coverage=0.35, min_segments=1):
+                    candidates.append((0, target))
+        if not candidates:
+            continue
+        if is_increment:
+            matching = [item for item in candidates if variable and variable in (item[1].text or "").replace(" ", "").casefold()]
+            candidates = matching or candidates
+        _, target = max(candidates, key=lambda item: (item[0], -item[1].bbox.y, item[1].id))
+        existing = [edge for edge in graph.edges if edge.source == source.id]
+        if any(edge.target == target.id for edge in existing):
+            continue
+        for edge in existing:
+            graph.edges.remove(edge)
+            context.arrows[:] = [arrow for arrow in context.arrows if arrow.id != edge.id]
+        sx, sy, sw, sh = source.bbox.to_list()
+        tx, ty, tw, th = target.bbox.to_list()
+        route = [(sx + sw // 2, sy + sh // 2), (tx + tw // 2, ty + th // 2)]
+        edge = Edge(f"e{len(graph.edges) + 1}", source.id, target.id, points=route)
+        graph.edges.append(edge)
+        context.arrows.append(Arrow(edge.id, route, route[-1], source_hint=source.id, target_hint=target.id))
+        context.diagnose(
+            "warning", "INFERRED_ARROW_DIRECTION",
+            "A loop-back was recovered from an increment step and the reachable upstream loop condition.",
+            "Review and accept this inferred loop-back before generating Python.", [source.id, target.id],
+        )
+        repaired += 1
+        context.diagnostics[:] = [
+            diagnostic for diagnostic in context.diagnostics
+            if not (diagnostic.code == "AMBIGUOUS_ARROW_DIRECTION"
+                    and {source.id, target.id}.issubset(diagnostic.element_ids))
+        ]
+    return repaired
+
+
 def infer_dangling_arrow_to_existing_edge(
     context: PipelineContext, graph: FlowGraph, fragments: list[tuple[Node, np.ndarray]], image_shape: tuple[int, int]
 ) -> int:
@@ -1250,6 +1340,7 @@ class GraphService:
         # intended convergence. General reading-order edge guessing remains off.
         infer_obvious_missing_branch_to_end(context, graph)
         infer_high_confidence_missing_edges(context, graph)
+        repair_semantic_loop_back_edges(context, graph)
         node_types = {node.id: node.type for node in graph.nodes}
         for word in context.edge_words:
             if not any(character.isalnum() for character in word.text):

@@ -158,7 +158,7 @@ class LogicService:
                 self._forward={node_id: [edge.target for edge in edge_list] for node_id,edge_list in outgoing.items()}
                 merge = self._merge(cursor, [yes, no], post, stop, [cursor])
                 if node.type == "iteration":
-                    loop_body = self._loop_body(cursor, yes.target, nodes, outgoing, graph, post, emitted, context)
+                    loop_body = self._loop_body(cursor, yes.target, nodes, outgoing, graph, dominators, post, emitted, context)
                     condition = node.text.split(None, 1)[1].strip() if node.text.upper().startswith("WHILE ") else ""
                     variable, expression = "", ""
                     if node.text.upper().startswith("FOR "):
@@ -179,14 +179,19 @@ class LogicService:
             cursor = edges[0].target if edges else None
         return result
 
-    def _loop_body(self, header, start, nodes, outgoing, graph, post, emitted, context):
+    def _loop_body(self, header, start, nodes, outgoing, graph, dominators, post, emitted, context):
         result=[]; cursor=start; seen=set()
         while cursor != header:
             if cursor in seen or cursor not in nodes:
                 raise StructureError("A loop body has multiple entries or cannot return to its header.", [header, cursor])
             seen.add(cursor); node=nodes[cursor]
             if node.type in ("decision", "iteration"):
-                raise StructureError("Nested control-flow regions are not reducible in this graph.", [header, cursor])
+                nested = self._sequence(
+                    cursor, header, nodes, outgoing, graph, dominators, post, emitted, context
+                )
+                result.extend(nested)
+                cursor = header
+                continue
             result.append(self._leaf(node)); emitted.add(cursor)
             edges=outgoing.get(cursor, [])
             back=next((edge for edge in edges if edge.target == header), None)
