@@ -1,5 +1,6 @@
 """Validate graph structure and the supported safe notation, never execute text."""
 from collections import defaultdict
+import re
 import networkx as nx
 from backend.models import PipelineContext
 from backend.notation import terminal_role, NotationError, normalize_label, validate_node_text
@@ -100,6 +101,25 @@ def branch_terminal_outputs(graph) -> set[str]:
     return result
 
 
+def _is_descriptive_chart(graph) -> bool:
+    """Identify charts written as human instructions rather than Python syntax.
+
+    Descriptive process labels are useful graph content even though they cannot
+    safely be lowered to Python. Keep the executable notation validator strict;
+    only downgrade statement diagnostics when the chart clearly uses the common
+    instruction vocabulary used by non-coder flowcharts.
+    """
+    instruction = re.compile(
+        r"\b(import|set|wait|generate|assign|display|show|read|enter|declare|"
+        r"repeat|check|increment|decrement|initialize|calculate)\b", re.IGNORECASE
+    )
+    return any(
+        (node.type == "process" and instruction.search(node.text or ""))
+        or (node.type == "decision" and re.match(r"\s*(?:is|does|repeat)\b", node.text or "", re.IGNORECASE))
+        for node in graph.nodes
+    )
+
+
 class ValidationService:
     name = "validation"
 
@@ -111,6 +131,7 @@ class ValidationService:
             return context
         _reconcile_decision_labels(context)
         nodes = {node.id: node for node in graph.nodes}
+        descriptive_chart = _is_descriptive_chart(graph)
         directed = nx.DiGraph()
         directed.add_nodes_from(nodes)
         incoming, outgoing = defaultdict(list), defaultdict(list)
@@ -143,7 +164,13 @@ class ValidationService:
                 validate_node_text(node.type, node.text)
             except NotationError as error:
                 code = "UNREADABLE_TEXT" if not node.text.strip() else "UNSUPPORTED_SHAPE" if node.type not in ("terminal", "process", "input", "output", "decision", "iteration", "connector") else "UNSUPPORTED_STATEMENT"
-                context.diagnose("error", code, f"{node.id}: {error}", "Use the notation guide and correct the source diagram, then re-upload.", [node.id])
+                if code == "UNSUPPORTED_STATEMENT" and descriptive_chart:
+                    context.diagnose(
+                        "warning", "DESCRIPTIVE_STATEMENT",
+                        f"{node.id}: descriptive action retained for flowchart review; it is not executable Python.",
+                        "This action is shown in pseudocode but is not lowered into generated Python.", [node.id])
+                else:
+                    context.diagnose("error", code, f"{node.id}: {error}", "Use the notation guide and correct the source diagram, then re-upload.", [node.id])
             branches = outgoing[node.id]
             is_end = node.id in ends
             if is_end:
@@ -192,7 +219,10 @@ class ValidationService:
                 entries = {target for source, target in directed.edges if target in component and source not in component}
                 headers = [node_id for node_id in ids if nodes[node_id].type == "iteration"]
                 if len(entries) != 1 or not headers or next(iter(entries)) not in headers:
-                    context.diagnose("error", "UNSTRUCTURED_FLOW", "A cycle has multiple entries or no iteration header at its entry.", "Express loops with a WHILE/FOR hexagon and a single entry into the loop.", ids)
+                    context.diagnose(
+                        "warning" if descriptive_chart else "error", "UNSTRUCTURED_FLOW",
+                        "A cycle has multiple entries or no iteration header at its entry.",
+                        "Express executable loops with a WHILE/FOR hexagon; this descriptive chart remains available for review.", ids)
                 else:
                     loops.append(component)
             for node in graph.nodes:

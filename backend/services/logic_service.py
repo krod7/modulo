@@ -13,6 +13,11 @@ class LogicService:
         graph = context.graph
         if graph is None or graph.start_id is None or context.has_errors:
             return context
+        # Human-language charts are intentionally graph-reviewable but are not
+        # lowered into the executable IR. In particular, decision diamonds
+        # used as loop labels would otherwise recurse through _sequence forever.
+        if any(item.code == "DESCRIPTIVE_STATEMENT" for item in context.diagnostics):
+            return context
         nodes = {node.id: node for node in graph.nodes}
         outgoing = {node_id: [] for node_id in nodes}
         for edge in graph.edges:

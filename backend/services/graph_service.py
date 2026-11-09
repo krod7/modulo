@@ -606,6 +606,40 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
             outgoing[source.id].append(edge); incoming[target.id].append(edge)
             inferred_count += 1
 
+    # A loop-back can be lost when its arrowhead is absorbed by a filled
+    # decision. Recover only a same-row process/output -> decision connection
+    # when the target already has an incoming path and the complete visible
+    # corridor is present. This is geometry-backed, not reading-order guessing.
+    for source in graph.nodes:
+        if source.type not in {"process", "output"} or outgoing[source.id]:
+            continue
+        sx, sy, sw, sh = source.bbox.to_list()
+        for target in graph.nodes:
+            if target.type != "decision" or target.id == source.id or not incoming[target.id]:
+                continue
+            tx, ty, tw, th = target.bbox.to_list()
+            if abs((sy + sh / 2) - (ty + th / 2)) > 0.28 * max(sh, th):
+                continue
+            if sx + sw <= tx:
+                route = [(sx + sw, int(round(sy + sh / 2))), (tx, int(round(ty + th / 2)))]
+            elif tx + tw <= sx:
+                route = [(sx, int(round(sy + sh / 2))), (tx + tw, int(round(ty + th / 2)))]
+            else:
+                continue
+            if not route_has_visible_stroke(mask, route, min_coverage=0.45, min_segments=1):
+                continue
+            edge = Edge(f"e{len(graph.edges) + 1}", source.id, target.id, points=route)
+            graph.edges.append(edge)
+            context.arrows.append(Arrow(edge.id, route, route[-1], source_hint=source.id, target_hint=target.id))
+            context.diagnose(
+                "warning", "INFERRED_ARROW_DIRECTION",
+                "A visibly drawn loop-back was attached to the adjacent decision after its arrowhead was obscured.",
+                "Review and accept this inferred loop-back before generating Python.", [source.id, target.id],
+            )
+            outgoing[source.id].append(edge); incoming[target.id].append(edge)
+            inferred_count += 1
+            break
+
     # Second: a missing sibling branch into a downstream process/output node.
     # This handles decisions whose branches lead to different kinds of shapes,
     # not just two output nodes. The candidate must already have a path to End.

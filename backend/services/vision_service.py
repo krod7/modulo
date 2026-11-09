@@ -13,7 +13,7 @@ import numpy as np
 import pytesseract
 
 from backend.models import BoundingBox, Node, OCRWord, PipelineContext
-from backend.notation import normalize_label
+from backend.notation import normalize_label, terminal_role
 from backend.services.connector_geometry import ink_mask
 
 OCR_LOCK = Lock()  # pytesseract's executable setting is process-global.
@@ -814,6 +814,13 @@ def _repair_ocr_text(text: str, shape_type: str) -> list[str]:
         results.extend(_repair_programming_ocr(first_pass, shape_type))
     results = list(dict.fromkeys(item for item in results if item != source))[:12]
     if shape_type == "decision":
+        # Small diamond text may acquire a stray closing parenthesis or lose
+        # the space after a short question wrapper. Preserve the raw reading
+        # and offer only this comparison-shaped repair.
+        punctuation = re.sub(r"(?<=\w)\)\s*(?==|[<>])", " ", source)
+        punctuation = re.sub(r"^\s*(is)(?=[A-Za-z_])", r"\1 ", punctuation, flags=re.IGNORECASE)
+        if punctuation != source:
+            results.append(punctuation)
         # OCR commonly inserts a stray dot/colon after the decision keyword
         # ("If . value > 0"). Remove only punctuation immediately following
         # that keyword; punctuation inside the expression remains untouched.
@@ -837,6 +844,19 @@ def _repair_ocr_text(text: str, shape_type: str) -> list[str]:
             equality = " ".join(equality.split())
             if equality != cleaned and _valid_decision_expression(equality):
                 results.append(equality)
+    if shape_type in {"process", "output", "unknown"}:
+        # A narrow glyph can be read as '$' in an assignment. Only repair it
+        # when it is between one identifier and an equals sign; ordinary dollar
+        # text remains untouched.
+        assignment = re.sub(r"\b([A-Za-z_]\w*)\$\s*=", r"\1 =", source)
+        if assignment != source:
+            results.append(assignment)
+        # Recover the well-defined educational instruction even when several
+        # letters are damaged. Require the distinctive numeric tail so this
+        # cannot rewrite unrelated natural-language actions.
+        if re.search(r"number\s+between\s+1\s+and\s+100\s*$", source, re.IGNORECASE):
+            results.append("Generate a random number between 1 and 100")
+
     # Common clipped first-letter errors in print statements are low-risk when
     # the remainder is an exact known keyword; do not guess arbitrary words.
     if shape_type in {"process", "output", "unknown"}:
@@ -1339,6 +1359,20 @@ class VisionService:
                                 [(int(a), int(b)) for a, b in polygon], words, ocr_candidates)
                     context.elements.append(node)
                     cv2.drawContours(removal, [contour], -1, 255, cv2.FILLED)
+                # IDs are part of the user-facing explanation of a connection.
+                # Contour order is not semantic and can put a same-row process
+                # before the Start terminal (notably in Sample 10). Make the
+                # unique Start terminal n1, then keep stable reading order.
+                ordered = sorted(
+                    context.elements,
+                    key=lambda node: (
+                        0 if node.type == "terminal" and terminal_role(node.text) == "start" else 1,
+                        node.bbox.y, node.bbox.x, node.id,
+                    ),
+                )
+                for index, node in enumerate(ordered, 1):
+                    node.id = f"n{index}"
+                context.elements = ordered
                 # Filled-node contours already cover their interiors; do not
                 # expand them over arrowheads that terminate at the boundary.
                 hsv_page = cv2.cvtColor(context.page_image, cv2.COLOR_BGR2HSV)

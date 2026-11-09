@@ -98,20 +98,16 @@
 <p id="review-hint" class="review-hint" hidden>Only Flagged OCR Text And Branch Labels Can Be Edited. Corrections Are Revalidated Before Approval.</p>
 <div id="node-list" class="node-list" aria-label="Recognized pseudocode nodes">
 </div>
-<details class="connections" id="connections-panel">
-<summary>
-<span class="connections-chevron" aria-hidden="true">▸</span>
-<span class="connections-title">Detected Connections</span>
-<span class="connections-cue"></span>
-</summary>
+<section class="connections" id="connections-panel" aria-labelledby="connections-heading">
+<h3 id="connections-heading" class="connections-heading">Detected Connections</h3>
 <div id="edge-list">
 </div>
-</details>
+</section>
 </div>
 <footer class="panel-footer">
 <button id="review-button" class="button action-button" hidden>Edit Flagged Regions</button>
 <button id="revalidate-button" class="button primary" hidden>Revalidate Corrections</button>
-<button id="approve-button" class="button primary" disabled>Approve Pseudocode</button>
+<button id="approve-button" class="button primary" disabled>Approve Logic &amp; Directions</button>
 </footer>
 </article>
 <article class="panel">
@@ -172,6 +168,7 @@
 <dd>Exactly two circles with the same connector label.</dd>
 </dl>
 <p>Tip: press <kbd>F11</kbd> to toggle full screen; <kbd>Esc</kbd> leaves it.</p>
+<p><strong>Detected connections:</strong> Each connection explains which shape sends flow to the next. A branch label such as <code>Yes</code> or <code>No</code> describes the route chosen from a decision.</p>
 <p>If recognition is uncertain, fix the source and upload again. Modulo does not guess missing directions or labels.</p>
 <p><strong>Recognition details:</strong> Each recognized element lists its original OCR text, OpenCV shape classification, and Tesseract confidence so you can compare the result with the source diagram before approving it.</p>
 <p>
