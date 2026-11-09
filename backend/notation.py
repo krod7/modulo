@@ -11,14 +11,15 @@ ALLOWED_AST_TYPES = (ast.Expression, ast.Module, ast.Assign, ast.AugAssign, ast.
     ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow, ast.UAdd, ast.USub, ast.Not,
     ast.And, ast.Or, ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE)
 NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
-INPUT = re.compile(r"^Input\s+(?:variable\s*:\s*)?([A-Za-z][A-Za-z0-9_]*)(?::(int|float|str))?$", re.IGNORECASE)
+INPUT = re.compile(r"^Input\s+(?:variable\s*:\s*)?((?:[A-Za-z][A-Za-z0-9_]*\s*(?:,\s*(?:and\s+)?|\s+and\s+))*(?:[A-Za-z][A-Za-z0-9_]*))(?::(int|float|str))?$", re.IGNORECASE)
 FOR = re.compile(r"^FOR\s+([A-Za-z][A-Za-z0-9_]*)\s+IN\s+(.+)$", re.IGNORECASE)
 # Small, explicit vocabulary of safe high-level operations that can be lowered to Python.
 FACTORIAL_COMMAND = re.compile(r"^calculate\s+(?:the\s+)?factorial(?:\s+of\s+([A-Za-z][A-Za-z0-9_]*))?$", re.IGNORECASE)
+DECLARE = re.compile(r"^declare\s+variables?\s+(.+)$", re.IGNORECASE)
 
 def is_supported_natural_operation(text: str) -> bool:
     """Whether a process label names a deterministic operation we implement."""
-    return bool(FACTORIAL_COMMAND.fullmatch(text.strip()))
+    return bool(FACTORIAL_COMMAND.fullmatch(text.strip()) or DECLARE.fullmatch(text.strip()))
 
 class NotationError(ValueError):
     pass
@@ -90,6 +91,10 @@ def normalize_condition(text: str) -> str:
 def safe_name(name: str) -> bool:
     return bool(NAME.fullmatch(name)) and "__" not in name and name not in SAFE_BUILTINS and not keyword.iskeyword(name)
 
+def input_names(value: str) -> list[str]:
+    """Split a readable input list without accepting arbitrary expressions."""
+    return [name for name in re.split(r"\s*(?:,|\band\b)\s*", value, flags=re.IGNORECASE) if name]
+
 def validate_ast(text: str, mode: str = "eval") -> ast.AST:
     try:
         tree = ast.parse(text, mode=mode)
@@ -131,7 +136,7 @@ def validate_node_text(kind: str, text: str) -> None:
             raise NotationError("A connector needs a short matching letter/number label.")
     elif kind == "input":
         match = INPUT.fullmatch(text)
-        if not match or not safe_name(match.group(1)):
+        if not match or not all(safe_name(name) for name in input_names(match.group(1))):
             raise NotationError("Use Input name or Input name:int (also float or str).")
     elif kind == "output":
         if not text.lower().startswith("output "):
