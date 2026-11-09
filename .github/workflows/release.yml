@@ -37,7 +37,7 @@ jobs:
           mkdir -p vendor/tesseract/tessdata
           cp "$(brew --prefix)/bin/tesseract" vendor/tesseract/
           cp "$(brew --prefix)/share/tessdata/"{eng,osd}.traineddata vendor/tesseract/tessdata/
-          dylibbundler -od -b -x vendor/tesseract/tesseract -d vendor/tesseract/ -p @executable_path/
+          dylibbundler -cd -b -x vendor/tesseract/tesseract -d vendor/tesseract/ -p @executable_path/
       - run: pyinstaller modulo.spec --noconfirm
       - run: |
           brew install create-dmg
