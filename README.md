@@ -673,9 +673,7 @@ Recognition is the least deterministic part of Modulo: the same diagram can be r
 
 ### 12.1 Confidence score
 
-The interface shows a recognition score for each analysis, combining OCR confidence with shape and connector detection confidence (weighted 70% OCR and 30% geometry). Individual elements below the threshold are flagged on the flowchart, and the score details are listed with the analysis notes so a beginner can see what to double-check.
-
-<!-- CONFIRM: that the 70/30 weighting and the score names match the current frontend and backend. -->
+The interface reports three independently calculated components: **OCR Recognition (40%)**, **Shape Classification (20%)**, and **Connector & Graph Reconstruction (40%)**. The authoritative formula is `Overall = (OCR × 0.40) + (Shape × 0.20) + (Graph × 0.40)`. It also reports `Critical Component Confidence = min(OCR, Shape, Graph)` so a strong result in one component cannot conceal a weak component. Grades are Excellent (90–100), Good (80–89), Moderate (70–79), Low (50–69), and Very Low (0–49). Individual uncertain elements and component-level warnings remain visible on the flowchart and in the analysis notes.
 
 ### 12.2 OCR preprocessing
 

@@ -167,12 +167,9 @@
 <dt>Small circle</dt>
 <dd>Exactly two circles with the same connector label.</dd>
 </dl>
-<p>Tip: press <kbd>F11</kbd> to toggle full screen; <kbd>Esc</kbd> leaves it.</p>
-<p><strong>Detected connections:</strong> Each connection explains which shape sends flow to the next. A branch label such as <code>Yes</code> or <code>No</code> describes the route chosen from a decision.</p>
-<p>If recognition is uncertain, fix the source and upload again. Modulo does not guess missing directions or labels.</p>
-<p><strong>Recognition details:</strong> Each recognized element lists its original OCR text, OpenCV shape classification, and Tesseract confidence so you can compare the result with the source diagram before approving it.</p>
-<p>
-<strong>This build:</strong> intake, vision, graph, validation, logic recovery, pseudocode review, approval, Python generation, and traceability.</p>
+<p><strong>Accepted flowchart language:</strong> Modulo reads a structured subset of ISO 5807 notation. Use one single-page PNG, JPG/JPEG, SVG, or PDF with separate shapes, legible text, and visible arrowheads.</p>
+<p><strong>Notation rules:</strong> Terminals start and end the program; rectangles contain assignments or supported operations; parallelograms contain <code>Input name</code> or <code>Output expression</code>; diamonds contain conditions with <code>Yes</code>/<code>No</code> branches; hexagons contain <code>WHILE condition</code> or <code>FOR name IN expression</code>; and matching small circles may join distant connector paths.</p>
+<p><strong>Supported logic:</strong> Modulo accepts sequences, nested decisions, <code>WHILE</code>/<code>FOR</code> loops, assignments, arithmetic and comparisons, input/output, and the supported control statements <code>break</code>, <code>continue</code>, and <code>return</code>. Keep shapes non-overlapping and connect every path to an ending terminal.</p>
 </dialog>
 <div id="shape-note" class="shape-note" hidden role="tooltip"></div>
 </body>

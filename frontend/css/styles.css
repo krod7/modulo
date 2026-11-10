@@ -478,13 +478,13 @@ progress {
 }
 .edge-overlay {
   fill:none;
-  stroke:#c62828;
+  stroke:#087f8c;
   stroke-width:3.5;
   vector-effect:non-scaling-stroke;
   cursor:pointer
 }
 .edge-overlay.linked-active {
-  stroke:#8e1717;
+  stroke:#07525f;
   stroke-width:7
 }
 .recognition {

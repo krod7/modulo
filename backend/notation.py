@@ -89,7 +89,9 @@ def normalize_condition(text: str) -> str:
     return candidate if _parses(candidate) else condition
 
 def safe_name(name: str) -> bool:
-    return bool(NAME.fullmatch(name)) and "__" not in name and name not in SAFE_BUILTINS and not keyword.iskeyword(name)
+    # Flowchart authors commonly use `max` as an accumulator name. It is safe
+    # as a local assignment target even though it shadows a builtin in Python.
+    return bool(NAME.fullmatch(name)) and "__" not in name and not keyword.iskeyword(name)
 
 def input_names(value: str) -> list[str]:
     """Split a readable input list without accepting arbitrary expressions."""
@@ -141,7 +143,14 @@ def validate_node_text(kind: str, text: str) -> None:
     elif kind == "output":
         if not text.lower().startswith("output "):
             raise NotationError("Use Output followed by an expression.")
-        validate_ast(text.split(None, 1)[1])
+        expression = text.split(None, 1)[1]
+        try:
+            validate_ast(expression)
+        except NotationError:
+            # Plain-language output labels are valid flowchart content. They
+            # remain untrusted text and are quoted by the IR renderer.
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)*", expression):
+                raise
     elif kind == "decision":
         validate_ast(normalize_condition(text))
     elif kind == "iteration":

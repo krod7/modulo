@@ -45,7 +45,7 @@ class LogicService:
         post = self._postdominators(reachable, set(graph.end_ids))
         emitted: set[str] = set()
         try:
-            root_children = self._sequence(graph.start_id, None, nodes, outgoing, reachable, dominators, post, emitted, context)
+            root_children = self._sequence(graph.start_id, None, nodes, outgoing, reachable, dominators, post, emitted, context, set())
             context.ir = IRNode("Program", source_ids=[], children=root_children)
             if emitted - set(nodes):
                 raise ValueError("IR referenced an unknown node")
@@ -132,14 +132,18 @@ class LogicService:
             ),
         )
 
-    def _sequence(self, current, stop, nodes, outgoing, graph, dominators, post, emitted, context):
+    def _sequence(self, current, stop, nodes, outgoing, graph, dominators, post, emitted, context, active=None):
         result = []
         cursor = current
         local_seen = set()
+        active = set(active or ())
         while cursor is not None and cursor != stop:
+            if cursor in active:
+                return result
             if cursor in local_seen:
                 raise StructureError("A sequence contains a cycle without an iteration header.", list(local_seen))
             local_seen.add(cursor)
+            active.add(cursor)
             node = nodes[cursor]
             if node.type in ("terminal", "connector"):
                 emitted.add(cursor)
@@ -169,8 +173,8 @@ class LogicService:
                     emitted.add(cursor)
                     cursor = no.target
                     continue
-                then = self._sequence(yes.target, merge, nodes, outgoing, graph, dominators, post, emitted, context)
-                otherwise = self._sequence(no.target, merge, nodes, outgoing, graph, dominators, post, emitted, context)
+                then = self._sequence(yes.target, merge, nodes, outgoing, graph, dominators, post, emitted, context, active)
+                otherwise = self._sequence(no.target, merge, nodes, outgoing, graph, dominators, post, emitted, context, active)
                 result.append(IRNode("If", [cursor], condition=normalize_condition(node.text), children=then, otherwise=otherwise))
                 emitted.add(cursor); cursor = merge
                 continue
@@ -187,7 +191,7 @@ class LogicService:
             seen.add(cursor); node=nodes[cursor]
             if node.type in ("decision", "iteration"):
                 nested = self._sequence(
-                    cursor, header, nodes, outgoing, graph, dominators, post, emitted, context
+                    cursor, header, nodes, outgoing, graph, dominators, post, emitted, context, {header}
                 )
                 result.extend(nested)
                 cursor = header
@@ -205,7 +209,15 @@ class LogicService:
         if node.type == "input":
             match=INPUT.fullmatch(text)
             return IRNode("Input", [node.id], text=text, variable=match.group(1) if match else "", expression=match.group(2) if match and match.group(2) else "str")
-        if node.type == "output": return IRNode("Output", [node.id], text=text, expression=text.split(None,1)[1].strip())
+        if node.type == "output":
+            expression = text.split(None, 1)[1].strip()
+            try:
+                ast.parse(expression, mode="eval")
+            except (SyntaxError, ValueError, RecursionError):
+                # The notation validator permits simple human-readable output
+                # labels; quote only the generated expression, not node.text.
+                expression = repr(expression)
+            return IRNode("Output", [node.id], text=text, expression=expression)
         if node.type == "process": return IRNode("Process", [node.id], text=text)
         raise StructureError(f"Unsupported node {node.id} in structured flow.", [node.id])
 

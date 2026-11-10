@@ -13,6 +13,15 @@ from backend.services.connector_geometry import (connector_stroke_width, endpoin
 from backend.notation import terminal_role, normalize_label
 from backend.services.vision_service import erase_enclosed_components
 
+def _next_edge_id(graph: FlowGraph) -> str:
+    """Return a stable unused edge ID after inferred edges are appended."""
+    used = {edge.id for edge in graph.edges}
+    index = len(graph.edges) + 1
+    while f"e{index}" in used:
+        index += 1
+    return f"e{index}"
+
+
 @dataclass
 class Port:
     node: Node
@@ -511,7 +520,7 @@ def infer_obvious_missing_branch_to_end(context: PipelineContext, graph: FlowGra
         ):
             continue
 
-        edge = Edge(f"e{len(graph.edges) + 1}", source.id, end.id, points=route)
+        edge = Edge(_next_edge_id(graph), source.id, end.id, points=route)
         graph.edges.append(edge)
         context.arrows.append(Arrow(edge.id, route, finish, source_hint=source.id, target_hint=end.id))
         context.diagnose(
@@ -560,15 +569,21 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
     height, width = mask.shape[:2]
 
     # First: a genuinely visible vertical stroke between otherwise unconnected
-    # adjacent nodes. The gap must be clear of any intervening node.
+    # adjacent nodes. The gap must be clear of any intervening node. This is
+    # intentionally limited to one unique aligned source/target pair; a line is
+    # never promoted to an edge from proximity alone.
     for source in graph.nodes:
-        if source.type != "input" or outgoing[source.id]:
+        if source.type == "terminal" and terminal_role(source.text) == "end":
+            continue
+        if outgoing[source.id]:
             continue
         sx, sy, sw, sh = source.bbox.to_list()
         source_cx = sx + sw / 2
         candidates = []
         for target in graph.nodes:
-            if target.type != "decision" or incoming[target.id]:
+            if target.type == "terminal" and terminal_role(target.text) == "start":
+                continue
+            if incoming[target.id]:
                 continue
             tx, ty, tw, th = target.bbox.to_list()
             gap = ty - (sy + sh)
@@ -590,14 +605,14 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
             corridor = mask[max(0, y0):min(height, y1 + 1), max(0, x0 - 3):min(width, x0 + 4)]
             row_hits = np.count_nonzero(corridor, axis=1) > 0
             coverage = float(np.count_nonzero(row_hits)) / max(1, len(row_hits))
-            if coverage >= 0.55:
+            if coverage >= 0.35:
                 candidates.append((coverage, target))
         if len(candidates) == 1:
             coverage, target = candidates[0]
             tx, ty, tw, th = target.bbox.to_list()
             start = (int(round(source_cx)), sy + sh)
             finish = (int(round(tx + tw / 2)), ty)
-            edge = Edge(f"e{len(graph.edges) + 1}", source.id, target.id,
+            edge = Edge(_next_edge_id(graph), source.id, target.id,
                         points=[start, finish])
             graph.edges.append(edge)
             context.arrows.append(Arrow(edge.id, edge.points, finish, source_hint=source.id, target_hint=target.id))
@@ -629,7 +644,7 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
                 continue
             if not route_has_visible_stroke(mask, route, min_coverage=0.45, min_segments=1):
                 continue
-            edge = Edge(f"e{len(graph.edges) + 1}", source.id, target.id, points=route)
+            edge = Edge(_next_edge_id(graph), source.id, target.id, points=route)
             graph.edges.append(edge)
             context.arrows.append(Arrow(edge.id, route, route[-1], source_hint=source.id, target_hint=target.id))
             context.diagnose(
@@ -727,7 +742,7 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
             ):
                 continue
 
-            edge = Edge(f"e{len(graph.edges) + 1}", decision.id, target.id, points=route)
+            edge = Edge(_next_edge_id(graph), decision.id, target.id, points=route)
             graph.edges.append(edge)
             context.arrows.append(Arrow(edge.id, route, finish, source_hint=decision.id, target_hint=target.id))
             context.diagnose("warning", "INFERRED_DECISION_BRANCH",
@@ -741,6 +756,24 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
 def repair_semantic_loop_back_edges(context: PipelineContext, graph: FlowGraph) -> int:
     """Recover a lost loop-back from an unmistakable increment/update step."""
     nodes = {node.id: node for node in graph.nodes}
+    removable = []
+    for edge in graph.edges:
+        source, target = nodes.get(edge.source), nodes.get(edge.target)
+        if not source or not target or target.type not in {"decision", "iteration"}:
+            continue
+        if target.bbox.center[1] >= source.bbox.center[1]:
+            continue
+        if any(other.id not in {source.id, target.id}
+               and ((target.bbox.y < other.bbox.center[1] < source.bbox.y)
+                    or (other.bbox.center[1] > source.bbox.center[1]
+                        and other.bbox.center[1] - source.bbox.center[1] < source.bbox.center[1] - target.bbox.center[1]))
+               and abs(other.bbox.center[0] - source.bbox.center[0]) < 0.22 * max(source.bbox.width, target.bbox.width)
+               and not any(candidate.target == other.id for candidate in graph.edges)
+               for other in graph.nodes):
+            removable.append(edge)
+    if removable:
+        graph.edges[:] = [edge for edge in graph.edges if edge not in removable]
+        context.arrows[:] = [arrow for arrow in context.arrows if arrow.id not in {edge.id for edge in removable}]
     adjacency = defaultdict(list)
     for edge in graph.edges:
         adjacency[edge.source].append(edge.target)
@@ -763,9 +796,10 @@ def repair_semantic_loop_back_edges(context: PipelineContext, graph: FlowGraph) 
         text = (source.text or "").replace(" ", "").casefold()
         variable_match = re.match(r"([a-z_]\w*)=", text)
         variable = variable_match.group(1) if variable_match else ""
-        is_increment = any(token in text for token in ("+1", "+l", "+i")) or bool(
-            re.search(r"=i(?:t)?[l1]$", text)
-        )
+        rhs = text.split("=", 1)[1] if "=" in text else ""
+        is_increment = "+1" in text or bool(
+            variable and re.search(rf"\b{re.escape(variable)}\s*\+\s*[1il]\b", rhs)
+        ) or bool(re.search(r"=i(?:t)?[l1]$", text))
         candidates = []
         for target in graph.nodes:
             if target.type not in {"decision", "iteration"} or target.id == source.id:
@@ -788,6 +822,11 @@ def repair_semantic_loop_back_edges(context: PipelineContext, graph: FlowGraph) 
                      if target.type in {"decision", "iteration"}
                      and target.bbox.y > source.bbox.y
                      and abs(target.bbox.center[0] - source.bbox.center[0]) < 0.22 * max(source.bbox.width, target.bbox.width)]
+            below = [target for target in below if not any(
+                other.id != source.id and other.id != target.id
+                and source.bbox.y + source.bbox.height <= other.bbox.center[1] <= target.bbox.y
+                and abs(other.bbox.center[0] - source.bbox.center[0]) < 0.22 * max(source.bbox.width, target.bbox.width)
+                for other in graph.nodes)]
             if len(below) == 1:
                 target = below[0]
                 route = [(source.bbox.center[0], source.bbox.y + source.bbox.height),
@@ -809,7 +848,7 @@ def repair_semantic_loop_back_edges(context: PipelineContext, graph: FlowGraph) 
         sx, sy, sw, sh = source.bbox.to_list()
         tx, ty, tw, th = target.bbox.to_list()
         route = [(sx + sw // 2, sy + sh // 2), (tx + tw // 2, ty + th // 2)]
-        edge = Edge(f"e{len(graph.edges) + 1}", source.id, target.id, points=route)
+        edge = Edge(_next_edge_id(graph), source.id, target.id, points=route)
         graph.edges.append(edge)
         context.arrows.append(Arrow(edge.id, route, route[-1], source_hint=source.id, target_hint=target.id))
         context.diagnose(
@@ -981,7 +1020,7 @@ def infer_dangling_arrow_to_existing_edge(
         target_anchor = (int(round(tx + tw / 2)), int(round(ty + th / 2)))
         if math.dist(route[-1], target_anchor) > max_gap * 2:
             route.append(target_anchor)
-        edge = Edge(f"e{len(graph.edges) + 1}", source.id, target_id, points=route)
+        edge = Edge(_next_edge_id(graph), source.id, target_id, points=route)
         graph.edges.append(edge)
         context.arrows.append(Arrow(edge.id, route, route[-1], source_hint=source.id, target_hint=target_id))
         # The dangling-fragment warning is no longer actionable once its
@@ -1508,9 +1547,9 @@ class GraphService:
             incoming_second = any(edge.target == second.id for edge in graph.edges)
             outgoing_second = any(edge.source == second.id for edge in graph.edges)
             if incoming_first and not outgoing_first and outgoing_second and not incoming_second:
-                graph.edges.append(Edge(f"e{len(graph.edges) + 1}", first.id, second.id, structural=True))
+                graph.edges.append(Edge(_next_edge_id(graph), first.id, second.id, structural=True))
             elif incoming_second and not outgoing_second and outgoing_first and not incoming_first:
-                graph.edges.append(Edge(f"e{len(graph.edges) + 1}", second.id, first.id, structural=True))
+                graph.edges.append(Edge(_next_edge_id(graph), second.id, first.id, structural=True))
             else:
                 context.diagnose("error", "AMBIGUOUS_CONNECTOR_PAIR", "A connector pair has ambiguous entry and exit arrows.", "One circle receives flow; its matching circle sends flow onward.", [first.id, second.id])
         starts = [node.id for node in graph.nodes if node.type == "terminal" and terminal_role(node.text) == "start"]

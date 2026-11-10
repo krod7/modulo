@@ -149,7 +149,7 @@ def _promote_cycle_headers(graph, directed, nodes) -> None:
         for edge in directed.out_edges(node.id):
             if edge[1] == node.id:
                 continue
-            if returns_without_nested_control(edge[1], node.id):
+            if returns_without_nested_control(edge[1], node.id) or nx.has_path(directed, edge[1], node.id):
                 text = (node.text or "").strip().rstrip("?").strip()
                 if not text.upper().startswith(("WHILE ", "FOR ")):
                     node.text = f"WHILE {text}"

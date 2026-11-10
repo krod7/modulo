@@ -139,6 +139,7 @@ class AnalysisResponse:
     expires_at: str | None = None
     def to_dict(self) -> dict:
         ctx = self.context
+        from backend.services.confidence_service import calculate_confidence
         graph = ctx.graph or FlowGraph(nodes=ctx.elements)
         page = None
         if ctx.page_image is not None:
@@ -146,23 +147,11 @@ class AnalysisResponse:
             page = {"width": width, "height": height, "image_url": f"/api/analysis/{self.analysis_id}/image" if self.analysis_id else None}
         status = "failed" if ctx.has_errors else "ready" if ctx.ir is not None and ctx.pseudocode else "analyzed"
         nodes = graph.nodes
-        ocr_score = round(sum(max(0.0, min(1.0, node.confidence)) for node in nodes) / len(nodes) * 100) if nodes else 0
-        geometry_codes = {"AMBIGUOUS_CONNECTOR", "AMBIGUOUS_ARROW_DIRECTION", "AMBIGUOUS_EDGE_LABEL",
-                          "AMBIGUOUS_CONNECTOR_PAIR", "DANGLING_ARROW", "INFERRED_ARROW_DIRECTION",
-                          "INFERRED_TERMINAL_DIRECTION", "INFERRED_VISIBLE_GAP_CONNECTION"}
-        geometry_issues = sum(1 for item in ctx.diagnostics if item.code in geometry_codes)
-        geometry_score = max(0, 100 - geometry_issues * 8)
-        overall_score = round(ocr_score * .7 + geometry_score * .3) if nodes else 0
-        if overall_score >= 90:
-            grade, label = "A", "Great"
-        elif overall_score >= 80:
-            grade, label = "B", "Good"
-        elif overall_score >= 70:
-            grade, label = "C", "Fair"
-        elif overall_score >= 60:
-            grade, label = "D", "Poor"
-        else:
-            grade, label = "F", "Poor"
+        confidence = calculate_confidence(nodes, graph, ctx.diagnostics)
+        geometry_score = round((confidence["shape"] + confidence["graph"]) / 2)
+        geometry_issues = sum(1 for item in ctx.diagnostics
+                              if item.code in {"UNSUPPORTED_SHAPE", "AMBIGUOUS_CONNECTOR",
+                                               "DANGLING_ARROW", "AMBIGUOUS_ARROW_DIRECTION"})
         return {"status": status, "analysis_id": self.analysis_id,
                 "expires_at": self.expires_at, "page": page,
                 "nodes": [node.to_dict() for node in graph.nodes], "edges": [edge.to_dict() for edge in graph.edges],
@@ -172,6 +161,5 @@ class AnalysisResponse:
                 "approved": ctx.approved,
                 "diagnostics": [item.to_dict() for item in ctx.diagnostics],
                 "completed_stages": ctx.completed_stages, "generation_available": bool(ctx.ir and not ctx.has_errors),
-                "recognition_score": {"overall": overall_score, "grade": grade, "label": label,
-                                      "ocr": ocr_score, "geometry": geometry_score,
+                "recognition_score": {**confidence, "geometry": geometry_score,
                                       "geometry_issues": geometry_issues}}

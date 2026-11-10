@@ -458,8 +458,8 @@ def read_words_safely(image: np.ndarray, context: PipelineContext, psm: int,
     """
     try:
         return read_words(image, context, psm, origin)
-    except pytesseract.TesseractError as error:
-        if "timeout" in str(error).lower():
+    except (pytesseract.TesseractError, RecursionError) as error:
+        if isinstance(error, pytesseract.TesseractError) and "timeout" in str(error).lower():
             raise
         return "", []
 
@@ -729,6 +729,9 @@ def _repair_programming_ocr(text: str, shape_type: str) -> list[str]:
         spaced = re.sub(r"^(while|for)(?=[A-Za-z_])", r"\1 ", source, flags=re.IGNORECASE)
         if spaced != source:
             proposals.append(spaced)
+        duplicate_operator = re.sub(r"(<=|>=|==|!=)\s*=", r"\1 ", source)
+        if duplicate_operator != source:
+            proposals.append(duplicate_operator)
 
     # OCR often reads zero as O/o and one as I/l. Correct only a whole token
     # occupying a numeric operand position; never rewrite ordinary identifiers.
@@ -891,7 +894,8 @@ def select_ocr_candidate(candidates: list[tuple[str, list[OCRWord]]], shape_type
             normalized_counts[normalized] = normalized_counts.get(normalized, 0) + 1
     ranked = sorted(((_candidate_score(text, words, shape_type) +
                       min(.24, .08 * max(0, normalized_counts.get(" ".join(text.split()).casefold(), 1) - 1)) +
-                      (.85 if shape_type == "decision" and _valid_decision_expression(text) else 0.0),
+                      (.85 if shape_type == "decision" and _valid_decision_expression(text) else 0.0) +
+                      (1.0 if shape_type == "process" and _syntax_plausibility(text, shape_type) >= .8 else 0.0),
                       text, words) for text, words in expanded), key=lambda item: item[0], reverse=True)
     best_score, best_text, best_words = ranked[0]
     plausible = []
