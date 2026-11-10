@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 160">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#07162F"/><stop offset=".52" stop-color="#123D78"/><stop offset="1" stop-color="#07152D"/></linearGradient>
-    <linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFF"/><stop offset=".55" stop-color="#83BDFF"/><stop offset="1" stop-color="#20E3C2"/></linearGradient>
-  </defs>
-  <rect x="4" y="4" width="152" height="152" rx="34" fill="url(#bg)"/>
-  <path d="M38 116V48Q38 43 43 43H53Q57 43 61 48L80 70L99 48Q103 43 107 43H117Q122 43 122 48V116H103V75L86 94Q83 97 80 97Q77 97 74 94L57 75V116Z" fill="url(#m)"/>
-  <text x="184" y="108" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="76" font-weight="650" letter-spacing="-2" fill="#0D1E3D">Modulo</text>
-</svg>
