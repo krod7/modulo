@@ -551,13 +551,44 @@ def infer_instruction_kind(shape_type: str, text: str) -> tuple[str, str]:
         return "output", "Output " + match.group(1)
     match = re.match(r"^(print|output|display|show)\s*:?\s+(.+)$", text.strip(), re.IGNORECASE)
     if match:
-        payload = match.group(2).strip()
-        # If OCR drops only the final quote from a quoted output literal, restore
-        # the delimiter rather than passing a broken string into validation.
-        if payload[:1] in {"'", '"'} and payload.count(payload[0]) % 2:
-            payload += payload[0]
-        return "output", "Output " + payload
+        return "output", "Output " + repair_output_literal(match.group(2))
     return shape_type, text
+
+
+# Glyphs Tesseract substitutes for a double quote at the edge of a string
+# literal, mostly on small or recompressed images (web downloads/thumbnails).
+_OPENING_QUOTE_LOOKALIKES = "*“”„«»″"
+_CLOSING_QUOTE_LOOKALIKES = "*“”«»″"
+_QUOTE_DEBRIS = "®™°"
+
+
+def repair_output_literal(payload: str) -> str:
+    """Restore the delimiters of an output string literal damaged by OCR.
+
+    Only the first and last characters are touched, and only when the payload
+    is (or starts as) a quoted literal; ordinary expressions are unchanged. A
+    leading ``*`` or ``™``/``®`` beside the closing quote is never valid
+    Python output, so mapping them back to a quote does not alter real logic.
+    """
+    payload = payload.strip()
+    if not payload:
+        return payload
+    if payload[0] in _OPENING_QUOTE_LOOKALIKES:
+        payload = '"' + payload[1:]
+    if payload[0] not in {"'", '"'}:
+        return payload
+    quote = payload[0]
+    body = payload[1:].rstrip(_QUOTE_DEBRIS).rstrip()
+    if body.endswith(quote):
+        body = body[:-1].rstrip(_QUOTE_DEBRIS) + quote
+    elif body and body[-1] in _CLOSING_QUOTE_LOOKALIKES:
+        body = body[:-1] + quote
+    payload = quote + body
+    # If OCR drops only the final quote from a quoted output literal, restore
+    # the delimiter rather than passing a broken string into validation.
+    if payload.count(quote) % 2:
+        payload += quote
+    return payload
 
 def _sample_refinement(filename: str, shape_type: str, text: str) -> str:
     """Repair OCR-dropped spaces around ``and``/``is`` in variable lists and conditions.
@@ -1390,14 +1421,25 @@ class VisionService:
                             if not any(item.get("text") == text for item in ocr_candidates):
                                 ocr_candidates.insert(0, {"text": text, "reason": "conservative programming-vocabulary correction",
                                                           "score": 0.0, "confidence": 0.0})
+                    # Start/End is decided by the label as well as the outline:
+                    # web-sourced charts often draw terminals as plain boxes or
+                    # small circles, which geometry alone files as process or
+                    # connector. Text that is exactly a terminal phrase is never a
+                    # valid statement or connector label, so promoting it is safe.
+                    if geometry_kind in {"process", "unknown", "connector"} and terminal_role(text) is not None:
+                        geometry_kind = "terminal"
                     kind, text = infer_instruction_kind(geometry_kind, text)
                     flags = []
                     if kind == "data":
                         lowered = re.sub(r"^[^a-z]+", "", text.lower().strip())
                         first_word = re.split(r"\s+", lowered, maxsplit=1)[0] if lowered else ""
                         kind = "input" if first_word in {"input", "read", "enter"} else "output" if first_word in {"output", "display", "show", "print"} else "unknown"
-                        if kind == "output" and first_word != "output":
-                            text = "Output " + text.split(None, 1)[1]
+                        if kind == "output" and first_word != "output" and len(text.split(None, 1)) > 1:
+                            text = "Output " + repair_output_literal(text.split(None, 1)[1])
+                        # An I/O parallelogram holding only a quoted literal can
+                        # only be an output (e.g. OCR lost a faint "Display" line).
+                        if kind == "unknown" and text.strip()[:1] in set("'\"") | set(_OPENING_QUOTE_LOOKALIKES):
+                            kind, text = "output", "Output " + repair_output_literal(text)
                         if kind == "unknown":
                             flags.append("UNRECOGNIZED_DATA_TEXT")
                     # Preserve a leading "If" in the recognized source text.

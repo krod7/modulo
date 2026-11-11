@@ -37,7 +37,12 @@ def normalize_label(text: str | None) -> str | None:
     return BRANCH_LABELS.get(value)
 
 START_WORDS = ("start", "begin")
-END_WORDS = ("end", "stop", "exit", "finish", "halt")
+END_WORDS = ("end", "stop", "exit", "finish", "halt", "terminate")
+# Words that may accompany a terminal keyword without changing its role, as in
+# "Start Program", "End of Program" or "Stop the algorithm". Statements such as
+# "Return x" or "End If" contain other words and are therefore not terminals.
+TERMINAL_FILLER_WORDS = frozenset(("program", "process", "algorithm", "flowchart", "procedure",
+                                   "of", "the", "here"))
 
 
 def terminal_role(text: str | None) -> str | None:
@@ -48,10 +53,15 @@ def terminal_role(text: str | None) -> str | None:
     (e.g. "Return result") is not treated as a terminal role.
     """
     value = re.sub(r"^[\W_]+|[\W_]+$", "", (text or "").strip().casefold())
-    if value in START_WORDS:
-        return "start"
-    if value in END_WORDS:
-        return "end"
+    # OCR sometimes splits a short word inside a capsule ("STAR T", "En d").
+    collapsed = re.sub(r"\s+", "", value)
+    # Phrases qualify only when made purely of words ("end = 5" is a statement).
+    words = value.split() if re.fullmatch(r"[a-z]+(?:\s+[a-z]+)*", value) else []
+    for role, vocabulary in (("start", START_WORDS), ("end", END_WORDS)):
+        if value in vocabulary or collapsed in vocabulary:
+            return role
+        if words and words[0] in vocabulary and all(word in TERMINAL_FILLER_WORDS for word in words[1:]):
+            return role
     return None
 
 

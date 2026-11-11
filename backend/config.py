@@ -11,7 +11,7 @@ def integer(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     MAX_UPLOAD_MB: int = field(default_factory=lambda: integer("MAX_UPLOAD_MB", 10))
-    ALLOWED_EXTENSIONS: tuple[str, ...] = field(default_factory=lambda: tuple(item.strip().lower() for item in os.getenv("ALLOWED_EXTENSIONS", "png,jpg,jpeg,svg,pdf").split(",")))
+    ALLOWED_EXTENSIONS: tuple[str, ...] = field(default_factory=lambda: tuple(item.strip().lower() for item in os.getenv("ALLOWED_EXTENSIONS", "png,jpg,jpeg,webp,svg,pdf").split(",")))
     TESSERACT_CMD: str | None = field(default_factory=lambda: os.getenv("TESSERACT_CMD") or None)
     OCR_LANGUAGE: str = field(default_factory=lambda: os.getenv("OCR_LANGUAGE", "eng"))
     OCR_MIN_CONFIDENCE: int = field(default_factory=lambda: integer("OCR_MIN_CONFIDENCE", 60))

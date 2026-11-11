@@ -14,20 +14,48 @@ class UploadError(ValueError):
         super().__init__(message)
         self.code, self.message, self.status = code, message, status
 
+# Raster formats are decoded by Pillow from their contents, so the extension is
+# only a hint. Images saved from the web (for example Google Images) are often
+# WebP, or WebP/PNG bytes saved under a ``.jpg`` name; built-in samples never
+# are, which is why such charts failed only when uploaded independently.
+RASTER_KINDS = ("png", "jpg", "webp")
+SUPPORTED_KINDS = ("png", "jpg", "jpeg", "webp", "pdf", "svg")
+
+
+def sniff_kind(data: bytes) -> str | None:
+    """Identify the actual file format from its leading bytes."""
+    normalized = data.lstrip().lower()
+    if data.startswith(b"%PDF-"):
+        return "pdf"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if normalized.startswith(b"<svg") or (normalized.startswith(b"<?xml") and b"<svg" in normalized[:4096]):
+        return "svg"
+    return None
+
+
 def inspect_upload(data: bytes, filename: str, settings: Settings) -> str:
     extension = Path(filename).suffix.lower().lstrip(".")
-    if extension not in settings.ALLOWED_EXTENSIONS or extension not in ("png", "jpg", "jpeg", "pdf", "svg"):
-        raise UploadError("UNSUPPORTED_FILE_TYPE", "Choose a PNG, JPG, JPEG, SVG, or single-page PDF.", 415)
+    if extension not in settings.ALLOWED_EXTENSIONS or extension not in SUPPORTED_KINDS:
+        raise UploadError("UNSUPPORTED_FILE_TYPE", "Choose a PNG, JPG, JPEG, WebP, SVG, or single-page PDF.", 415)
     if not data:
         raise UploadError("EMPTY_FILE", "The file is empty. Export your diagram again.")
     if len(data) > settings.max_upload_bytes:
         raise UploadError("FILE_TOO_LARGE", f"Choose a file no larger than {settings.MAX_UPLOAD_MB} MB.", 413)
-    normalized = data.lstrip().lower()
-    expected = "pdf" if data.startswith(b"%PDF-") else "png" if data.startswith(b"\x89PNG\r\n\x1a\n") else "jpg" if data.startswith(b"\xff\xd8\xff") else "svg" if (normalized.startswith(b"<svg") or (normalized.startswith(b"<?xml") and b"<svg" in normalized[:4096])) else None
+    expected = sniff_kind(data)
     claimed = "jpg" if extension == "jpeg" else extension
-    if expected != claimed:
-        raise UploadError("CONTENT_TYPE_MISMATCH", "The contents do not match the filename. Export a genuine PNG, JPG, JPEG, SVG, or PDF.", 415)
-    return claimed
+    if expected == claimed:
+        return claimed
+    # A raster image whose extension names a different raster format is still a
+    # genuine image: decode it by its real format. Documents (PDF/SVG) and
+    # unrecognized contents must still match their extension exactly.
+    if expected in RASTER_KINDS and claimed in RASTER_KINDS:
+        return expected
+    raise UploadError("CONTENT_TYPE_MISMATCH", "The contents do not match the filename. Export a genuine PNG, JPG, JPEG, WebP, SVG, or PDF.", 415)
 
 def decode_page(data: bytes, kind: str, settings: Settings) -> np.ndarray:
     if kind == "svg":

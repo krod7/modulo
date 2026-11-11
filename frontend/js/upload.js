@@ -2,7 +2,7 @@ export const MAX_UPLOAD_MB = 10;
 export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 export function validateFile(file, maxMB = MAX_UPLOAD_MB) {
   if (!file) return 'Choose a file first.';
-  if (!/\.(png|jpe?g|svg|pdf)$/i.test(file.name)) return 'Use a PNG, JPG, SVG, or single-page PDF file.';
+  if (!/\.(png|jpe?g|webp|svg|pdf)$/i.test(file.name)) return 'Use a PNG, JPG, WebP, SVG, or single-page PDF file.';
   if (!file.size) return 'This file is empty. Export the diagram again.';
   if (file.size > maxMB * 1024 * 1024) return `This file is too large. Choose a file no larger than ${maxMB} MB.`;
   return null;
