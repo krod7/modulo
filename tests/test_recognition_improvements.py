@@ -131,6 +131,13 @@ def test_instruction_verbs_refine_rectangular_shape_semantics():
     )
 
 
+def test_glued_print_keyword_recovers_single_letter_output_variable():
+    from backend.services.vision_service import infer_instruction_kind
+
+    assert infer_instruction_kind("data", "printc") == ("output", "Output c")
+    assert infer_instruction_kind("data", "printtotal") == ("data", "printtotal")
+
+
 def test_aligned_connector_fragments_are_stitched_without_global_closing():
     from backend.models import BoundingBox, Node
     from backend.services.graph_service import bridge_aligned_connector_gaps

@@ -530,6 +530,12 @@ def infer_instruction_kind(shape_type: str, text: str) -> tuple[str, str]:
     match = re.match(r"^(input|read|enter)\s+(.+)$", text.strip(), re.IGNORECASE)
     if match:
         return "input", "Input " + match.group(2).strip()
+    # Tesseract can merge the short keyword and a one-letter output variable
+    # (for example ``printc``). Repair only this narrow flowchart form; longer
+    # glued identifiers remain unchanged for review.
+    match = re.match(r"^print([A-Za-z])$", text.strip(), re.IGNORECASE)
+    if match:
+        return "output", "Output " + match.group(1)
     match = re.match(r"^(print|output|display|show)\s*:?\s+(.+)$", text.strip(), re.IGNORECASE)
     if match:
         payload = match.group(2).strip()
