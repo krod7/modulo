@@ -6,7 +6,6 @@ import ast
 import difflib
 import math
 import re
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -101,9 +100,22 @@ def filled_region_contours(binary: np.ndarray, grayscale: np.ndarray,
     neutral = (grayscale > 80) & (grayscale < 235) & (hsv[:, :, 1] < 35)
     raw = np.where(saturated | neutral, 255, 0).astype(np.uint8)
     stroke = estimate_stroke_width(binary)
-    size = int(np.clip(2 * stroke + 3, 9, 31)) | 1
+    # The opening runs on the colour/gray fill mask, not the ink mask. In
+    # JPEGs, chroma subsampling makes a coloured connector noticeably wider
+    # in that mask than its dark ink (about 15 px against 7 px for a small
+    # upscaled download). A kernel sized only from the ink then fails to
+    # remove the connector, which fuses into every node it touches. Size the
+    # kernel to clear connectors as they appear in the mask being opened.
+    fill_stroke = estimate_stroke_width(raw)
+    size = int(np.clip(max(2 * stroke + 3, fill_stroke + 3), 9, 31)) | 1
     opened = cv2.morphologyEx(raw, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
-    count, labels, stats, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
+    # After the opening every genuine part is at least ``size`` pixels thick,
+    # so a slight erosion only cuts hairline contacts. Labelling the eroded
+    # mask keeps a filled arrowhead whose tip blurred onto a node (common in
+    # JPEG downloads) from becoming part of that node; each component's rim is
+    # restored from ``opened`` below.
+    neck = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(cv2.erode(opened, neck), connectivity=8)
     page_area = raw.size
     height, width = raw.shape[:2]
     regrow = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size + 4, size + 4))
@@ -118,6 +130,7 @@ def filled_region_contours(binary: np.ndarray, grayscale: np.ndarray,
         x0, y0 = max(0, x - pad), max(0, y - pad)
         x1, y1 = min(width, x + w + pad), min(height, y + h + pad)
         component = np.where(labels[y0:y1, x0:x1] == index, 255, 0).astype(np.uint8)
+        component = cv2.bitwise_and(cv2.dilate(component, neck), opened[y0:y1, x0:x1])
         region = cv2.bitwise_and(cv2.dilate(component, regrow), raw[y0:y1, x0:x1])
         solid_pixels = int(np.count_nonzero(region))
         region = _fill_holes(region)
@@ -555,6 +568,11 @@ def _sample_refinement(filename: str, shape_type: str, text: str) -> str:
     ``isValid`` are left unchanged.
     """
     value = " ".join(text.split())
+    if shape_type in {"process", "input", "data"}:
+        # OCR can also glue the keyword to a one-letter first variable
+        # (``Reada, b and c``). Split only when that letter is followed by a
+        # list separator or the end, so words such as ``Readable`` are kept.
+        value = re.sub(r"^(read|input|enter)([A-Za-z])(?=\s*(?:,|and\b|$))", r"\1 \2", value, flags=re.I)
     if shape_type in {"process", "input", "data"} and re.match(r"^(?:declare\s+variables?|read|input|enter)\b", value, re.I):
         value = re.sub(r"(?<=[A-Za-z0-9])(?=and\b)", " ", value, flags=re.I)
         value = re.sub(r"\b([A-Za-z])and([A-Za-z])\b", r"\1 and \2", value, flags=re.I)
@@ -1465,13 +1483,6 @@ class VisionService:
             finally:
                 pytesseract.pytesseract.tesseract_cmd = previous
         _reconcile_low_confidence_comparison_thresholds(context.elements)
-        if Path(context.filename).stem.casefold() == "sample7":
-            # This chart's OCR readings are confirmed by its complete graph and
-            # valid statement forms; do not let a low-confidence duplicate
-            # candidate downgrade the final recognition score.
-            for node in context.elements:
-                if node.text.strip() and node.type != "connector":
-                    node.confidence = max(node.confidence, 0.85)
         # Contour fills do not always cover the outer half of anti-aliased
         # outlines. Those leftover node borders are often larger components than
         # the real arrows and can be mistaken for connectors that run around a

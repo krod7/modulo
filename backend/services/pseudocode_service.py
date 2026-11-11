@@ -8,9 +8,6 @@ class PseudocodeService:
         if context.ir is None or context.has_errors: return context
         lines=[]
         self._render(context.ir, lines, 0)
-        if context.filename.casefold().endswith("sample7.png") and not any(item.kind == "Input" for item in self._walk(context.ir)):
-            insert_at = 1 if lines and lines[0][1] == "START" else 0
-            lines.insert(insert_at, (0, "INPUT num", []))
         context.pseudocode=[SourceLine(index+1, indent, text, ids) for index,(indent,text,ids) in enumerate(lines)]
         return context
     def _render(self,node,lines,indent):

@@ -90,8 +90,10 @@ pipeline passed samples 2-6 and 9 and failed 1, 7, 8 and 10:
 
 ## Known limitations
 
-* Sample 7 draws `print "Enter a number"` but never inputs `num`; code
-  generation correctly refuses the undefined variable. No step is invented.
+* Sample 7 draws `print "Enter a number"` but never inputs `num`. Because the
+  chart has no Input shape and a condition tests `num`, the logic stage adds an
+  `INPUT num` step (README Section 12.6) and keeps the `UNDEFINED_VARIABLE`
+  review warning. Undefined names used only in assignments are still refused.
 * Tesseract reads DejaVu-style "i = i + 1" as `i=it+l` (also `loop.png`).
 * Loops drawn with a decision diamond (samples 1, 10, `loop.png`) are traced
   correctly but the notation still requires a WHILE/FOR hexagon to emit code.

@@ -55,6 +55,8 @@ class LogicService:
             if missing:
                 context.diagnose("error", "UNSTRUCTURED_FLOW", "Some flowchart elements could not be placed in structured control flow.", "Use one-entry if/else and loop regions with visible merge points.", missing)
                 context.ir = None
+            else:
+                _add_implicit_inputs(context.ir, graph)
         except StructureError as error:
             context.diagnose("error", "UNSTRUCTURED_FLOW", str(error), "Use sequences, two-way decisions, and single-entry loops; avoid jumps and crossing regions.", error.ids)
             context.ir = None
@@ -272,6 +274,50 @@ def _defined_names(graph: FlowGraph) -> set[str]:
                 names.update(item.id.casefold() for item in ast.walk(tree)
                              if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Store))
     return names
+
+
+def _add_implicit_inputs(root: IRNode, graph: FlowGraph) -> None:
+    """Read condition variables that a chart with no Input shape never defines.
+
+    Some charts (for example ``if num > 0`` with no input step) branch on a
+    value that nothing in the diagram supplies. When the chart has no Input
+    shape at all and a decision or loop condition reads a name that is never
+    input, assigned, or declared, that value can only come from the user, so
+    an ``Input`` is placed after Start. This depends only on the chart's
+    statements. A name used only in an assignment is left alone, because that
+    is the usual sign of a misread (``i = itl``). The UNDEFINED_VARIABLE
+    warning from validation still asks the user to review the reading.
+    """
+    if any(node.type == "input" for node in graph.nodes):
+        return
+    defined = _defined_names(graph) | {name.casefold() for name in SAFE_BUILTINS}
+    needed: list[str] = []
+
+    def collect(expression: str) -> None:
+        try:
+            tree = ast.parse(normalize_condition(expression), mode="eval")
+        except (SyntaxError, ValueError, RecursionError):
+            return
+        for item in ast.walk(tree):
+            if (isinstance(item, ast.Name) and isinstance(item.ctx, ast.Load)
+                    and item.id.casefold() not in defined
+                    and item.id.casefold() not in {name.casefold() for name in needed}):
+                needed.append(item.id)
+
+    def walk(nodes: list[IRNode]) -> None:
+        for child in nodes:
+            if child.kind in ("If", "While") and child.condition:
+                collect(child.condition)
+            walk(child.children)
+            walk(child.otherwise)
+
+    walk(root.children)
+    if not needed:
+        return
+    insert_at = 1 if root.children and root.children[0].kind == "Start" else 0
+    for offset, name in enumerate(needed):
+        root.children.insert(insert_at + offset,
+                             IRNode("Input", [], text=f"Input {name}", variable=name, expression="str"))
 
 
 def _undefined_word_outputs(graph: FlowGraph, context: PipelineContext) -> set[str]:

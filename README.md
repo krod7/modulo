@@ -734,9 +734,19 @@ The validation stage checks programming-like text for likely OCR confusions, inc
 
 The vision classifier combines multi-scale polygon approximation, interior corner angles, normalized corner placement, bounding-box aspect ratio, fill ratio, contour solidity, and circularity to distinguish process rectangles, decision diamonds, input/output parallelograms, iteration hexagons, rounded terminals, and circular connectors. Ambiguous contours remain `unknown` rather than being forced into a known type. OCR uses the contour's original bounding box and crop; the classifier does not shift or merge node boxes.
 
+Outline-free filled nodes are separated from connectors that share their colour by a morphological opening of the colour/gray fill mask. The kernel is sized from the stroke width measured in both the ink mask and the fill mask itself, because JPEG chroma subsampling makes a coloured connector noticeably wider in the fill mask than its dark ink. Components are labelled after a slight erosion, so a filled arrowhead whose tip has blurred onto a node is not absorbed into that node. Both rules depend only on measured pixel widths, so they behave the same for a downloaded copy of a chart at any resolution or JPEG quality.
+
 ### 12.5 Connectors and arrows
 
 The graph stage attaches arrow ends to shapes, determines direction from arrowheads, and attaches labels to edges. When direction or connection is recognized with low certainty, the edge is marked as inferred and a review warning is raised. See [Known Limitations](#14-known-limitations).
+
+- **Start/End connectors.** Start is always an origin and End a destination. `INFERRED_TERMINAL_DIRECTION` is raised only when the drawn arrowhead does not confirm that direction (no head at the target, or a head at the source); a connector with a clear arrowhead raises no warning.
+- **Lost arrowheads between ordinary steps.** When a filled shape absorbs an arrowhead, direction is inferred only from a unique role transition (for example input to decision) or, for any two ordinary steps (process, input, output, decision) stacked in one column, from the straight vertical connector between them (top to bottom). Lateral connectors and routed loop-backs are never oriented this way. Each inference raises `INFERRED_ARROW_DIRECTION` for review.
+- **No file-name logic.** Every stage works from the image content: shapes, connectors, arrowheads and text. The upload's file name is used only to check that its extension matches its contents.
+
+### 12.6 Values the chart never inputs
+
+If a chart has no Input shape at all and a decision or loop condition reads a variable that nothing inputs, assigns or declares (for example `if num > 0` with no input step), the logic stage places an `INPUT` for that variable after Start, because its value can only come from the user. The `UNDEFINED_VARIABLE` review warning is still shown. Names used only inside assignments are not treated this way, since that pattern usually means a misread (`i = itl`), and code generation still refuses them.
 
 ---
 
@@ -802,7 +812,8 @@ Last recorded result (2026-11-10): 8/10 samples structurally correct. Samples 2â
 - **Recognition varies by environment.** OCR and shape results can differ between library versions; the Tesseract version is documented and dependencies are pinned.
 - **Structured flow only.** Diagrams that cannot be expressed as sequences, if/else, and loops are rejected with `UNSTRUCTURED_FLOW`. That includes a loop with a second exit from its body, such as an arrow from inside the loop straight to End (test charts 10, 13, and 15).
 - **Loop detection.** A diamond is treated as a loop header only if a back edge enters it (pre-test loop) or one of its branches is a back edge to an ordinary step (post-test loop); decisions inside loop bodies stay decisions. A post-test loop whose body contains a decision cannot yet be structured and is reported as `UNSTRUCTURED_FLOW`.
-- **Filename-specific code.** `graph_service.py`, `pseudocode_service.py`, and `codegen_service.py` each contain a branch keyed on the file name `sample7.png` (it inserts `num = int(input())`, which the chart never draws). Sample 7 converts only because of this; it should be replaced or the sample corrected.
+- **Very small JPEGs.** Below roughly 650 px wide, JPEG compression can leave arrowheads at connector junctions too small to read, and those connectors are reported as `AMBIGUOUS_ARROW_DIRECTION`. Use a larger export or a PNG.
+- **Implicit inputs.** A chart with no Input shape that tests an undefined variable gets an `INPUT` step (Section 12.6). If that variable is actually an OCR misread, review the `UNDEFINED_VARIABLE` warning before generating code.
 - **Unverified constructs.** On-page connector circles and `break`/`continue`/`return` process boxes are parsed and validated, but no reference diagram exercises them yet.
 - **No exception-handling symbol.** Error paths are supported only as ordinary decisions (see [Open Decisions](#16-open-decisions)).
 - **Single-user, local use.** The in-memory analysis store is not shared between processes.

@@ -27,9 +27,9 @@ was copied from; `/api/samples` serves exactly that list and falls back to
 | `flowchart_sample11.png` | `test_flowcharts/png/07_do_while_guess.png` | Post-test (do-while) loop, input inside the loop |
 | `flowchart_sample12.png` | Grade-average chart (user-supplied) | Counting loop with a decision inside, then an else-if grade ladder |
 
-`samples/sample7.png` is deliberately excluded: it converts only because three
-backend files contain a branch keyed on the file name `sample7.png` (see README
-Section 14), so it is not a genuine end-to-end success.
+`samples/sample7.png` is not in the rotation. It never draws an input step; it
+converts through the general implicit-input rule (README Section 12.6), which
+depends only on the chart's statements, not on its file name.
 
 `test_flowcharts/jpg/` and `test_flowcharts/jpeg/` hold verified JPG and JPEG
 copies of charts 05 and 07; they are not in the rotation.

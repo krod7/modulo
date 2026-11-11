@@ -1240,7 +1240,12 @@ class GraphService:
                 source, target = anchored_pair
                 path = stroke_path(points, source.point, target.point)
                 if path:
-                    if not source.head or target.head is False:
+                    # Warn only when the drawn arrowhead does not confirm the
+                    # Start/End direction: no head at the target end, or a head
+                    # seen at the source end. A source port is normally a tail,
+                    # so testing ``not source.head`` warned on every terminal
+                    # connector, including ones with clear arrowheads.
+                    if source.head or not target.head:
                         context.diagnose(
                             "warning", "INFERRED_TERMINAL_DIRECTION",
                             "Connector direction was inferred from a Start/End terminal because its arrowhead was partly obscured.",
@@ -1301,6 +1306,21 @@ class GraphService:
                     vertical_gap = lower.node.bbox.center[1] - upper.node.bbox.center[1]
                     horizontal_gap = abs(lower.node.bbox.center[0] - upper.node.bbox.center[0])
                     if vertical_gap > 0.65 * max(upper.node.bbox.height, lower.node.bbox.height):
+                        inferred = (upper, lower)
+                elif role_pair <= {"process", "input", "output", "decision"}:
+                    # The same top-to-bottom cue applies to any other pair of
+                    # ordinary flow steps (for example Declare -> Read), but
+                    # only when the two shapes are stacked on one column so
+                    # the connector is a straight vertical step, never a
+                    # lateral branch or a routed loop-back.
+                    upper, lower = sorted(
+                        (first, second), key=lambda port: port.node.bbox.center[1]
+                    )
+                    vertical_gap = lower.node.bbox.center[1] - upper.node.bbox.center[1]
+                    horizontal_gap = abs(lower.node.bbox.center[0] - upper.node.bbox.center[0])
+                    if (vertical_gap > 0.65 * max(upper.node.bbox.height, lower.node.bbox.height)
+                            and horizontal_gap <= 0.18 * min(upper.node.bbox.width, lower.node.bbox.width)
+                            and abs(upper.point[0] - lower.point[0]) <= 0.18 * min(upper.node.bbox.width, lower.node.bbox.width)):
                         inferred = (upper, lower)
                 if inferred is not None:
                     source, target = inferred
@@ -1544,13 +1564,6 @@ class GraphService:
             else:
                 remaining_diagnostics.append(diagnostic)
         context.diagnostics = remaining_diagnostics
-
-        if context.filename.casefold().endswith("sample7.png"):
-            confirmed = {(edge.source, edge.target) for edge in graph.edges}
-            context.diagnostics = [diagnostic for diagnostic in context.diagnostics
-                                   if not (diagnostic.code == "INFERRED_TERMINAL_DIRECTION"
-                                           and len(diagnostic.element_ids) == 2
-                                           and tuple(diagnostic.element_ids) in confirmed)]
 
         # Circle pairs bridge an incoming physical arrow to an outgoing physical arrow.
         pairs = defaultdict(list)

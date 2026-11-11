@@ -36,8 +36,6 @@ class CodegenService:
             return context
         body=[]
         self._render(context.ir, body, 1, names, input_types)
-        if context.filename.casefold().endswith("sample7.png") and not any(child.kind == "Input" for child in self._walk_ir(context.ir)):
-            body.insert(0, (1, "num = int(input())", []))
         body=[SourceLine(1,0,"def main():",[])]+[SourceLine(index+2,indent,text,ids) for index,(indent,text,ids) in enumerate(body)]
         body += [SourceLine(len(body)+1,0,"",[]),SourceLine(len(body)+2,0,'if __name__ == "__main__":',[]),SourceLine(len(body)+3,1,"main()",[])]
         source="\n".join("    "*line.indent+line.text for line in body)+"\n"

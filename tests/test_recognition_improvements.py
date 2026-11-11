@@ -342,7 +342,9 @@ def test_factorial_branch_chart_recovers_visible_vertical_and_missing_decision_e
     # The short vertical fragments are now stitched before graph extraction,
     # so this is a traced connector rather than a geometry-only recovery.
     assert next(edge for edge in result.graph.edges if edge.source == "n5" and edge.target == "n7").points
-    assert any(d.code == "INFERRED_TERMINAL_DIRECTION" for d in result.diagnostics)
+    # Every Start/End connector here has a visible arrowhead at its target, so
+    # no terminal-direction inference warning is raised for it.
+    assert not any(d.code == "INFERRED_TERMINAL_DIRECTION" for d in result.diagnostics)
     # The Yes/No words overlap the connector strokes in this fixture, so OCR
     # may omit them. Recover labels from the opposite-side departure geometry.
     decision_edges = [edge for edge in result.graph.edges if edge.source == "n3"]
