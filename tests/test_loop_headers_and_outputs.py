@@ -125,3 +125,12 @@ def test_loop_back_repair_keeps_a_step_that_already_flows_back_to_the_header():
     repair_semantic_loop_back_edges(context, graph)
     assert ("p", "inc") in {(edge.source, edge.target) for edge in graph.edges}
     assert ("p", "h") not in {(edge.source, edge.target) for edge in graph.edges}
+
+
+def test_misread_name_is_flagged_as_undefined_variable():
+    nodes = [_node("s", "terminal", "Start"), _node("i0", "process", "i = 1"),
+             _node("h", "decision", "i <= 5?"), _node("inc", "process", "i=itl"),
+             _node("e", "terminal", "End")]
+    context = _convert(nodes, [("s", "i0"), ("i0", "h"), ("h", "inc", "Yes"), ("h", "e", "No"), ("inc", "h")])
+    flagged = [item for item in context.diagnostics if item.code == "UNDEFINED_VARIABLE"]
+    assert [item.element_ids for item in flagged] == [["inc"]] and "'itl'" in flagged[0].message

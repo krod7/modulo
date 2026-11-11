@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from backend.models import BoundingBox, Diagnostic, Edge, FlowGraph, Node
 from backend.services.confidence_service import (
-    BLOCKED_CAP, CONFIDENCE_WEIGHTS, CRITICAL_MARGIN, calculate_confidence, confidence_grade,
+    BLOCKED_CAP, CONFIDENCE_WEIGHTS, REVIEW_CAP, calculate_confidence, confidence_grade,
 )
 
 
@@ -52,14 +52,13 @@ def test_routine_warnings_do_not_scale_with_chart_size():
     assert large["overall"] >= small["overall"]
 
 
-def test_one_unreliable_node_limits_the_overall_score():
+def test_one_unreliable_node_lowers_ocr_without_capping_overall():
     graph = chain(10)
+    clean = score(graph, [])
     graph.nodes[4].confidence = 0.50
     result = score(graph, [warn("LOW_OCR_CONFIDENCE", "n5")])
-    assert result["ocr"] < 60
-    assert result["overall"] <= result["critical"] + CRITICAL_MARGIN
-    assert result["grade"] in {"Low", "Very Low"}
-    assert result["cap"] == "weakest_component"
+    assert result["ocr"] < clean["ocr"] and result["ocr"] < 85
+    assert result["overall"] == result["weighted"] and result["cap"] is None
 
 
 def test_blocking_error_caps_overall_even_when_components_are_strong():
@@ -79,8 +78,8 @@ def test_component_error_caps_that_component():
 def test_unsupported_shape_is_visible_in_shape_and_overall():
     graph = chain(6, kinds=["terminal", "process", "unknown", "process", "process", "terminal"])
     result = score(graph, [Diagnostic("error", "UNSUPPORTED_SHAPE", "", "", ["n3"])])
-    assert result["shape"] < 50
-    assert result["overall"] <= result["shape"] + CRITICAL_MARGIN
+    assert result["shape"] < 70
+    assert result["overall"] <= BLOCKED_CAP
 
 
 def test_branch_label_ocr_warning_affects_label_not_every_node():
@@ -96,3 +95,11 @@ def test_inferred_connectors_cost_more_than_terminal_inference():
     inferred = score(graph, [warn("INFERRED_ARROW_DIRECTION", "n2", "n3")])
     dangling = score(graph, [warn("DANGLING_ARROW", "n3")])
     assert terminal["graph"] > inferred["graph"] > dangling["graph"]
+
+
+def test_undefined_variable_caps_overall_at_moderate():
+    graph = chain(8)
+    result = score(graph, [warn("UNDEFINED_VARIABLE", "n4")])
+    assert result["weighted"] > REVIEW_CAP
+    assert result["overall"] == REVIEW_CAP and result["grade"] == "Moderate"
+    assert result["cap"] == "undefined_variable"

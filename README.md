@@ -453,7 +453,7 @@ Fifteen valid charts in each of five formats (`png`, `jpg`, `jpeg`, `pdf`, `svg`
 | File | Purpose |
 |---|---|
 | `samples/` | Ten annotated sample charts used by the structural ground-truth tests. |
-| `accepted_flowcharts/` | Copies of every chart verified to convert end to end, plus `rotation.json`, the ordered list of ten charts served by Try a Sample. |
+| `accepted_flowcharts/` | The twelve Try a Sample charts, named `flowchart_sample1` to `flowchart_sample12` in display order, and `rotation.json`, which lists them with their source files. |
 | `docs/RECOGNITION_FIXES.md` | Log of recognition changes and the tests that protect them. |
 | `pytest.ini` | Test configuration (import path and test folder). |
 | `requirements.txt` | Python dependencies. |
@@ -687,8 +687,8 @@ The interface reports three independently calculated components and an overall s
 
 ```
 Weighted = (OCR × 0.40) + (Shape × 0.10) + (Graph × 0.50)
-Critical = min(OCR, Shape, Graph)
-Overall  = min(Weighted, Critical + 10, 69 if any blocking error)
+Critical = min(OCR, Shape, Graph)        (reported; does not cap the score)
+Overall  = min(Weighted, 79 if any UNDEFINED_VARIABLE warning, 69 if any blocking error)
 ```
 
 Grades are **Excellent** (90–100: recognition reliable), **Good** (80–89: reliable, quick review), **Moderate** (70–79: check the flagged elements), **Low** (50–69: a blocking problem or an unreliable element), and **Very Low** (0–49). When a cap applies, the score panel says which one.
@@ -697,11 +697,11 @@ Grades are **Excellent** (90–100: recognition reliable), **Good** (80–89: re
 
 | Component | Elements | Element score | Component score |
 |---|---|---|---|
-| OCR | Node text and branch labels | Tesseract confidence mapped linearly from 50% (0) to 90% (1), times (1 − diagnostic weights on that element) | ½ average + ½ weakest element |
-| Shape | Nodes | 1 if classified as a supported shape and not flagged, else 0 | ½ average + ½ weakest element |
+| OCR | Node text and branch labels | Tesseract confidence mapped linearly from 40% (0) to 90% (1), times (1 − diagnostic weights on that element) | 65% average + 35% weakest element |
+| Shape | Nodes | 1 if classified as a supported shape and not flagged, else 0 | 65% average + 35% weakest element |
 | Graph | Connectors | Share of connectors attached at both ends, times (1 − total connector-diagnostic weight ÷ connector count) | As computed |
 
-An error-level diagnostic removes an element's whole score and caps its component at 69. Warning weights reflect how often each warning accompanied a real misread: `PROGRAMMING_OCR_AMBIGUITY` 0.05, `LOW_OCR_CONFIDENCE` 0.35, `INFERRED_TERMINAL_DIRECTION` and `RESOLVED_CONNECTOR_AMBIGUITY` 0.05, `REDUNDANT_CONNECTOR_FRAGMENT` 0.10, `DANGLING_ARROW` 0.50, and other connector inferences (arrow direction, visible gaps, branch labels) 0.30.
+An error-level diagnostic removes an element's whole score and caps its component at 69. Warning weights reflect how often each warning accompanied a real misread: `PROGRAMMING_OCR_AMBIGUITY` 0.02, `LOW_OCR_CONFIDENCE` 0.20, `UNDEFINED_VARIABLE` 0.60, `INFERRED_TERMINAL_DIRECTION` and `RESOLVED_CONNECTOR_AMBIGUITY` 0.05, `REDUNDANT_CONNECTOR_FRAGMENT` 0.10, `DANGLING_ARROW` 0.50, and other connector inferences (arrow direction, visible gaps, branch labels) 0.30.
 
 **Why this scale.** The previous scale (OCR 40%, Shape 20%, Graph 40%, a fixed 7 or 16 points per diagnostic) was checked against 52 recorded runs: the ten samples and the PNG, JPG, stress, and invalid charts in `test_flowcharts/`.
 
@@ -716,7 +716,9 @@ The previous scale failed in three ways:
 - Correct charts lost points in proportion to their size, because `PROGRAMMING_OCR_AMBIGUITY` and `INFERRED_TERMINAL_DIRECTION` appear on nearly every chart. Sample 8 scored OCR 35 although every node was read correctly.
 - One misread node was averaged away.
 
-Connector and graph reconstruction caused 24 of the 28 blocking failures, so it carries half the weight. Shape classification was correct on every chart that reached the graph stage, so its weight is low; a shape failure still shows through the weakest-component cap.
+Connector and graph reconstruction caused 24 of the 28 blocking failures, so it carries half the weight. Shape classification was correct on every chart that reached the graph stage, so its weight is low.
+
+**Revision (2026-11-10).** The weakest-component cap (overall at most 10 above the lowest component) was removed, and OCR warnings and mid-range Tesseract confidence are penalized less, because correctly read charts were graded too low. OCR confidence alone cannot separate a correct reading from a misread one (the grade-average sample's correct `i = i + 1` was read at 63%; chart 14's misread `i=itl` at 66%), so validation now raises an `UNDEFINED_VARIABLE` warning when a statement or condition uses a name that no shape inputs or assigns. That warning caps the overall score at 79 (Moderate). Re-scoring the recorded runs: charts that generate correct code score 79–100 (19 Excellent; samples 7 and 9 are Moderate because each really uses an undefined `num`), charts with a misread statement score 79 (Moderate), and blocked charts 18–69. The grade-average sample scores 91.
 
 **Limits.** The score measures recognition confidence, not semantic correctness. A confidently misread statement can still score Moderate (one run above). Charts recognized exactly but written outside the notation (for example an unquoted single-word output) can score Excellent and then stop at code generation. Review the pseudocode before approving.
 

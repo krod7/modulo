@@ -2,48 +2,37 @@
 
 Flowcharts verified to convert **end to end** with the current pipeline:
 analysis reaches `ready`, the pseudocode matches the drawn logic, Python is
-generated without errors, and the code does what the chart describes. Files
-here are copies; the originals stay in `samples/` and `test_flowcharts/`, which
-the ground-truth tests use unchanged.
+generated without errors, and the code does what the chart describes.
 
-`rotation.json` lists the ten charts used by **Try A Sample**, in display order
-(simplest first). The `/api/samples` endpoint serves exactly that list; if the
-manifest is missing it falls back to every file in `samples/`.
+`flowchart_sample1` to `flowchart_sample12` are the **Try A Sample** charts, named
+in display order (simplest first). `rotation.json` lists them, with the file each
+was copied from; `/api/samples` serves exactly that list and falls back to
+`samples/` if the manifest is missing. The originals stay in `samples/` and
+`test_flowcharts/`, which the ground-truth tests use unchanged.
 
-## Contents
+## Rotation
 
-| File | Source | Constructs | Overall confidence |
-|---|---|---|---|
-| `samples/sample2.png` | `samples/` | Sequence: assignment, output | 97 Excellent |
-| `samples/sample3.png` | `samples/` | `WHILE` hexagon loop | 97 Excellent |
-| `samples/sample4.png` | `samples/` | If/else, typed input `Input score:int` | 98 Excellent |
-| `samples/sample5.png` | `samples/` | If/else, descriptive input, `=` read as equality | 89 Good |
-| `samples/sample6.png` | `samples/` | If/else with `If` prefix, quoted outputs | 94 Excellent |
-| `samples/sample7.png` | `samples/` | Two consecutive ifs without else | 80 Good |
-| `samples/sample8.jpg` | `samples/` | Nested decisions, question-form conditions, multi-input, `Declare`, `Stop` | 84 Good |
-| `samples/sample9.jpg` | `samples/` | Error-path decision, `Calculate factorial` | 76 Moderate |
-| `test_flowcharts/{png,jpg,jpeg}/05_while_loop_count.*` | `test_flowcharts/` | Pre-test loop drawn as a diamond with a back edge | 97-98 Excellent (PNG/JPG) |
-| `test_flowcharts/{png,jpg,jpeg}/07_do_while_guess.*` | `test_flowcharts/` | Post-test (do-while) loop, input inside the loop | 98 Excellent (PNG/JPG) |
-
-Scores are from the scale in README Section 12.1 (PNG copies of 05 and 07 are
-the ones in the rotation). The SVG and PDF copies of 05 and 07 were not
-included because they could not be re-verified in the environment used for
-this check (PyMuPDF unavailable); add them after confirming locally.
-
-## Why the other test charts are not here
-
-Recorded run of all 15 `test_flowcharts/` charts (PNG and JPG):
-
-| Chart | Result | Cause |
+| File | Source | Constructs |
 |---|---|---|
-| 02, 03, 04 | Now convert (not yet added here) | Unquoted single-word outputs (`Output Adult`) are now printed as text with a review warning. |
-| 11, 14 | 11 now converts (not yet added here); 14 still misread | Low-confidence nodes are now re-read at 2x, which fixes `i = i + 1` in 11; 14 still reads `i=itl`. |
-| 01 | Blocked | One shape is classified as unsupported (`UNSUPPORTED_SHAPE`). |
-| 06, 08, 12 | Blocked | A connector's arrow direction is ambiguous or a node becomes unreachable. |
-| 09 | PNG now converts (not yet added here); JPG blocked | JPG: a statement is misread. |
-| 10, 13, 15 | Blocked: unstructured flow | The loop has a second exit from its body (straight to End). |
+| `flowchart_sample1.png` | `samples/sample2.png` | Sequence: assignment, output |
+| `flowchart_sample2.png` | `samples/sample4.png` | If/else, typed input `Input score:int` |
+| `flowchart_sample3.png` | `samples/sample6.png` | If/else with `If` prefix, quoted outputs |
+| `flowchart_sample4.png` | `samples/sample5.png` | If/else, descriptive input, `=` read as equality |
+| `flowchart_sample5.png` | `test_flowcharts/png/03_if_only_adult.png` | If without else; unquoted one-word output |
+| `flowchart_sample6.jpg` | `samples/sample8.jpg` | Nested decisions, question-form conditions, multi-input, `Declare`, `Stop` |
+| `flowchart_sample7.png` | `test_flowcharts/png/04_else_if_chain_grade.png` | Else-if ladder with four outcomes |
+| `flowchart_sample8.jpg` | `samples/sample9.jpg` | Error-path decision, `Calculate factorial` |
+| `flowchart_sample9.png` | `samples/sample3.png` | `WHILE` hexagon loop |
+| `flowchart_sample10.png` | `test_flowcharts/png/05_while_loop_count.png` | Pre-test loop drawn as a diamond with a back edge |
+| `flowchart_sample11.png` | `test_flowcharts/png/07_do_while_guess.png` | Post-test (do-while) loop, input inside the loop |
+| `flowchart_sample12.png` | Grade-average chart (user-supplied) | Counting loop with a decision inside, then an else-if grade ladder |
 
-The invalid and stress charts are expected to be rejected and are not candidates.
+`samples/sample7.png` is deliberately excluded: it converts only because three
+backend files contain a branch keyed on the file name `sample7.png` (see README
+Section 14), so it is not a genuine end-to-end success.
+
+`test_flowcharts/jpg/` and `test_flowcharts/jpeg/` hold verified JPG and JPEG
+copies of charts 05 and 07; they are not in the rotation.
 
 ## Re-verifying
 

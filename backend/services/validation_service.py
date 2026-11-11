@@ -184,6 +184,50 @@ def _promote_cycle_headers(graph, directed, nodes) -> None:
                 break
 
 
+def _flag_undefined_names(context, graph) -> None:
+    """Warn when a statement or condition reads a name nothing in the chart defines.
+
+    In a recognized chart this is almost always an OCR misreading (``i = i + 1``
+    read as ``i=itl``) or a missing Input shape. It is a review warning, not an
+    error: code generation still performs the authoritative check.
+    """
+    import ast
+    from backend.notation import FOR, SAFE_BUILTINS, normalize_condition
+    from backend.services.logic_service import _defined_names
+    defined = _defined_names(graph) | {name.casefold() for name in SAFE_BUILTINS}
+    for node in graph.nodes:
+        text = (node.text or "").strip()
+        if node.type == "decision":
+            sources = [(normalize_condition(text), "eval")]
+        elif node.type == "iteration" and text.upper().startswith("WHILE "):
+            sources = [(text.split(None, 1)[1], "eval")]
+        elif node.type == "iteration" and FOR.fullmatch(text):
+            sources = [(FOR.fullmatch(text).group(2), "eval")]
+        elif node.type == "process":
+            sources = [(text, "exec")]
+        elif node.type == "output" and len(text.split(None, 1)) == 2:
+            sources = [(text.split(None, 1)[1], "eval")]
+        else:
+            continue
+        missing = []
+        for source, mode in sources:
+            try:
+                tree = ast.parse(source, mode=mode)
+            except (SyntaxError, ValueError, RecursionError):
+                continue
+            # A lone undefined word in an output is printed as text instead.
+            if node.type == "output" and isinstance(tree.body, ast.Name):
+                continue
+            missing += [item.id for item in ast.walk(tree)
+                        if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Load)
+                        and item.id.casefold() not in defined and item.id not in missing]
+        if missing:
+            names = ", ".join(f"'{name}'" for name in missing)
+            context.diagnose("warning", "UNDEFINED_VARIABLE",
+                             f"{node.id} uses {names}, which no shape in the flowchart inputs or assigns; the text may have been misread.",
+                             "Correct the reading in review, or add the missing Input or assignment.", [node.id])
+
+
 class ValidationService:
     name = "validation"
 
@@ -314,6 +358,7 @@ class ValidationService:
                         ancestor = dominators[ancestor]
                     if not inside:
                         context.diagnose("error", "LOOP_CONTROL_OUTSIDE_LOOP", f"{node.text.strip()} is not inside a recognized loop body.", "Use break/continue only on the Yes/body path of an iteration.", [node.id])
+        _flag_undefined_names(context, graph)
         return context
 
 def run(context: PipelineContext) -> PipelineContext:

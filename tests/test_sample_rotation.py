@@ -22,9 +22,9 @@ RUN = os.getenv("FLOWCHART_RUN_PIPELINE") == "1"
 ENTRIES = json.loads(SAMPLE_ROTATION.read_text(encoding="utf-8"))["samples"]
 
 
-def test_rotation_lists_ten_distinct_existing_charts():
+def test_rotation_lists_twelve_distinct_existing_charts():
     paths = [entry["path"] for entry in ENTRIES]
-    assert len(paths) == 10 and len(set(paths)) == 10
+    assert len(paths) == 12 and len(set(paths)) == 12
     allowed = set(Settings().ALLOWED_EXTENSIONS)
     for relative in paths:
         path = ACCEPTED_DIR / relative

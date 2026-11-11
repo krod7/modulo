@@ -1,15 +1,17 @@
 {
   "description": "Ordered 'Try a Sample' rotation, simplest first. Paths are relative to accepted_flowcharts/. Every entry was verified end to end (analysis ready, Python generated and logically correct); see README.md.",
   "samples": [
-    {"path": "samples/sample2.png", "shows": "Straight sequence: assignment, output"},
-    {"path": "samples/sample4.png", "shows": "If/else with a typed input (Input score:int)"},
-    {"path": "samples/sample6.png", "shows": "If/else written as 'If <condition>', quoted text outputs, upper-case terminals"},
-    {"path": "samples/sample5.png", "shows": "Descriptive input label and '=' read as equality in a condition"},
-    {"path": "samples/sample7.png", "shows": "Two consecutive ifs without else; branches rejoin"},
-    {"path": "samples/sample8.jpg", "shows": "Nested decisions, question-form conditions, multi-variable input, Declare, Stop terminal (coloured)"},
-    {"path": "samples/sample9.jpg", "shows": "Error-path decision and the Calculate factorial command"},
-    {"path": "samples/sample3.png", "shows": "WHILE loop drawn as an iteration hexagon"},
-    {"path": "test_flowcharts/png/05_while_loop_count.png", "shows": "Pre-test loop drawn as a decision diamond with a back edge"},
-    {"path": "test_flowcharts/png/07_do_while_guess.png", "shows": "Post-test (do-while) loop with input inside the loop"}
+    {"path": "flowchart_sample1.png", "source": "samples/sample2.png", "shows": "Straight sequence: assignment, output"},
+    {"path": "flowchart_sample2.png", "source": "samples/sample4.png", "shows": "If/else with a typed input (Input score:int)"},
+    {"path": "flowchart_sample3.png", "source": "samples/sample6.png", "shows": "If/else written as 'If <condition>', quoted text outputs, upper-case terminals"},
+    {"path": "flowchart_sample4.png", "source": "samples/sample5.png", "shows": "Descriptive input label and '=' read as equality in a condition"},
+    {"path": "flowchart_sample5.png", "source": "test_flowcharts/png/03_if_only_adult.png", "shows": "If without else; unquoted one-word output printed as text"},
+    {"path": "flowchart_sample6.jpg", "source": "samples/sample8.jpg", "shows": "Nested decisions, question-form conditions, multi-variable input, Declare, Stop terminal (coloured)"},
+    {"path": "flowchart_sample7.png", "source": "test_flowcharts/png/04_else_if_chain_grade.png", "shows": "Else-if ladder with four outcomes"},
+    {"path": "flowchart_sample8.jpg", "source": "samples/sample9.jpg", "shows": "Error-path decision and the Calculate factorial command"},
+    {"path": "flowchart_sample9.png", "source": "samples/sample3.png", "shows": "WHILE loop drawn as an iteration hexagon"},
+    {"path": "flowchart_sample10.png", "source": "test_flowcharts/png/05_while_loop_count.png", "shows": "Pre-test loop drawn as a decision diamond with a back edge"},
+    {"path": "flowchart_sample11.png", "source": "test_flowcharts/png/07_do_while_guess.png", "shows": "Post-test (do-while) loop with input inside the loop"},
+    {"path": "flowchart_sample12.png", "source": "grade_average_flowchart (user-supplied)", "shows": "Counting loop with a decision inside it, then an else-if grade ladder"}
   ]
 }

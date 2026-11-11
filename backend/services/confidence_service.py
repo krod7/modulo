@@ -14,28 +14,31 @@ from backend.models import Diagnostic, FlowGraph, Node
 
 # Connector/graph reconstruction carries the most weight because it caused 24 of
 # the 28 blocking failures in the recorded test-chart runs; shape classification
-# is near-perfect whenever analysis gets that far, so it is weighted lightly and
-# relies on the weakest-component cap below to expose a shape failure.
+# is near-perfect whenever analysis gets that far, so it is weighted lightly.
 CONFIDENCE_WEIGHTS = {"ocr": 0.40, "shape": 0.10, "graph": 0.50}
 VALID_SHAPES = {"terminal", "process", "decision", "input", "output", "iteration", "connector"}
 
-# A strong component may lift the overall score at most this far above the
-# weakest component, so one unreliable stage cannot be averaged away.
-CRITICAL_MARGIN = 10
 # Highest overall score an analysis with a blocking (error-level) diagnostic can
 # receive: it cannot proceed to code generation, so it is never above "Low".
 BLOCKED_CAP = 69
+# Highest overall score when a statement reads a name nothing in the chart
+# defines (UNDEFINED_VARIABLE): usually a misread that would still produce wrong
+# or failing code, so the grade is at most "Moderate" (check flagged elements).
+REVIEW_CAP = 79
 # Tesseract confidence at or above RELIABLE counts as fully reliable; at or
-# below UNRELIABLE it counts as unusable; linear in between. Correct test-chart
-# nodes were read at 74-96%; the misreads that produced wrong code at 48-66%.
+# below UNRELIABLE it counts as unusable; linear in between. Tesseract often
+# reports 60-75% for correctly read short arithmetic, so the floor is kept low.
 OCR_RELIABLE = 0.90
-OCR_UNRELIABLE = 0.50
+OCR_UNRELIABLE = 0.40
+# Share of a component score taken from its weakest element (rest: average).
+WEAKEST_SHARE = 0.35
 
 # Diagnostics that specifically describe a component's reliability. Validation and
 # logic errors remain visible, but are not allowed to masquerade as OCR quality.
 OCR_CODES = {
     "LOW_OCR_CONFIDENCE", "PROGRAMMING_OCR_AMBIGUITY", "UNREADABLE_TEXT",
     "OCR_FAILED", "OCR_TIMEOUT", "OCR_UNAVAILABLE", "UNSUPPORTED_STATEMENT",
+    "UNDEFINED_VARIABLE",
 }
 SHAPE_CODES = {"UNSUPPORTED_SHAPE", "NO_SHAPES_DETECTED", "TOO_MANY_SHAPES"}
 GRAPH_CODES = {
@@ -56,8 +59,11 @@ DEFAULT_WARNING_WEIGHT = 0.30
 WARNING_WEIGHTS = {
     # Raised on nearly every chart, including every end-to-end correct one;
     # it is a review prompt, not evidence of a misread.
-    "PROGRAMMING_OCR_AMBIGUITY": 0.05,
-    "LOW_OCR_CONFIDENCE": 0.35,
+    "PROGRAMMING_OCR_AMBIGUITY": 0.02,
+    "LOW_OCR_CONFIDENCE": 0.20,
+    # A name nothing in the chart defines: the strongest sign of a misread
+    # statement among correctly structured charts.
+    "UNDEFINED_VARIABLE": 0.60,
     # Start/End roles fix the direction, so these inferences are low risk.
     "INFERRED_TERMINAL_DIRECTION": 0.05,
     "RESOLVED_CONNECTOR_AMBIGUITY": 0.05,
@@ -99,8 +105,9 @@ def _has_error(diagnostics: Iterable[Diagnostic], codes: set[str]) -> bool:
 
 
 def _blend(values: list[float]) -> float:
-    """Half average, half weakest element: one bad element matters."""
-    return 50.0 * sum(values) / len(values) + 50.0 * min(values)
+    """Mostly the average, with a smaller share from the weakest element."""
+    average = sum(values) / len(values)
+    return 100.0 * ((1.0 - WEAKEST_SHARE) * average + WEAKEST_SHARE * min(values))
 
 
 def _ocr_reliability(confidence: float) -> float:
@@ -186,8 +193,8 @@ def calculate_confidence(nodes: list[Node], graph: FlowGraph | None,
     critical = min(ocr, shape, graph_score)
     blocking = sum(1 for item in diagnostics if item.severity == "error")
     overall, cap = weighted, None
-    if critical + CRITICAL_MARGIN < overall:
-        overall, cap = critical + CRITICAL_MARGIN, "weakest_component"
+    if overall > REVIEW_CAP and any(item.code == "UNDEFINED_VARIABLE" for item in diagnostics):
+        overall, cap = REVIEW_CAP, "undefined_variable"
     if blocking and overall > BLOCKED_CAP:
         overall, cap = BLOCKED_CAP, "blocking_error"
     grade, label = confidence_grade(overall)

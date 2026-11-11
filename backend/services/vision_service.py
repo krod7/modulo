@@ -541,17 +541,21 @@ def infer_instruction_kind(shape_type: str, text: str) -> tuple[str, str]:
     return shape_type, text
 
 def _sample_refinement(filename: str, shape_type: str, text: str) -> str:
-    """Apply only the requested surface repairs for Samples 8 and 10."""
-    sample = Path(filename).stem.casefold()
+    """Repair OCR-dropped spaces around ``and``/``is`` in variable lists and conditions.
+
+    Applies to every chart (``filename`` is unused). Splits are limited to a
+    single-letter name glued to the keyword (``bandc`` -> ``b and c``,
+    ``isa > b`` -> ``is a > b``), so ordinary names such as ``android`` or
+    ``isValid`` are left unchanged.
+    """
     value = " ".join(text.split())
-    if sample == "sample8":
-        if shape_type in {"process", "input", "data"} and re.match(r"^(?:declare\s+variables?|read|input|enter)\b", value, re.I):
-            value = re.sub(r"(?<=[A-Za-z0-9])(?=and\b)", " ", value, flags=re.I)
-            value = re.sub(r"\b([A-Za-z])and([A-Za-z])\b", r"\1 and \2", value, flags=re.I)
-            value = re.sub(r"\s+and\s*", " and ", value, flags=re.I)
-            value = re.sub(r"\s*,\s*", ", ", value)
-        elif shape_type == "decision":
-            value = re.sub(r"^is(?=[A-Za-z_])", "is ", value, flags=re.I)
+    if shape_type in {"process", "input", "data"} and re.match(r"^(?:declare\s+variables?|read|input|enter)\b", value, re.I):
+        value = re.sub(r"(?<=[A-Za-z0-9])(?=and\b)", " ", value, flags=re.I)
+        value = re.sub(r"\b([A-Za-z])and([A-Za-z])\b", r"\1 and \2", value, flags=re.I)
+        value = re.sub(r"\s+and(?:\s+|(?=[A-Za-z]\b))", " and ", value, flags=re.I)
+        value = re.sub(r"\s*,\s*", ", ", value)
+    elif shape_type == "decision":
+        value = re.sub(r"^is(?=[A-Za-z]\b)", "is ", value, flags=re.I)
     return " ".join(value.split())
 
 def _normalize_comparison_spacing(text: str, shape_type: str) -> str:
