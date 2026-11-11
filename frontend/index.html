@@ -151,25 +151,42 @@
 <h2 id="guide-heading">A Diagram Modulo Can Read</h2>
 <button id="close-guide" class="button">Close</button>
 </header>
-<p>Use a single-page diagram with separate shapes, legible text, and visible arrowheads. Digital exports are easiest to read. Photographs and hand-drawn diagrams are supported, but lighting, perspective, paper texture, and handwriting increase the risk of an incorrect interpretation.</p>
+<p>Modulo reads a structured subset of ISO 5807 flowchart notation from one single-page PNG, JPG/JPEG, SVG, or PDF. Clean digital exports work best. Every chart in the <strong>Try A Sample</strong> rotation follows these rules and converts end to end, so they are good models to copy.</p>
+<h3>Shapes</h3>
 <dl>
-<dt>Terminal: rounded rectangle or oval</dt>
-<dd>Use for <code>Start</code> and <code>End</code>. Modulo accepts either common terminal style.</dd>
-<dt>Rectangle</dt>
-<dd>A safe assignment such as <code>total = total + n</code>.</dd>
-<dt>Parallelogram</dt>
-<dd>
-<code>Input n:int</code> or <code>Output total</code>.</dd>
-<dt>Diamond</dt>
-<dd>A condition such as <code>n &gt; 0?</code>. Two outgoing arrows, labeled Yes and No.</dd>
-<dt>Hexagon</dt>
-<dd>A preparation or iteration header such as <code>WHILE n &gt; 0</code> or <code>FOR i IN range(5)</code>; it is not treated as a condition diamond.</dd>
-<dt>Small circle</dt>
-<dd>Exactly two circles with the same connector label.</dd>
+<dt>Rounded rectangle or oval: Start / End</dt>
+<dd>Exactly one <code>Start</code>. End the program with <code>End</code>. <code>Begin</code>, <code>Stop</code>, <code>Exit</code>, <code>Finish</code> and <code>Halt</code> are also accepted, in any letter case. The terminal contains only that word.</dd>
+<dt>Rectangle: process</dt>
+<dd>One statement per box: an assignment such as <code>total = total + n</code> or <code>count = 0</code>. Two worded operations are also supported: <code>Calculate factorial</code> (or <code>Calculate factorial of n</code>) and <code>Declare variables a, b and c</code>. Any other plain-language text is reported as unsupported rather than guessed.</dd>
+<dt>Parallelogram: input</dt>
+<dd><code>Input n</code>, <code>Input n:int</code> (also <code>:float</code> or <code>:str</code>), <code>Input a, b and c</code>, or <code>Input variable: n</code>. An untyped input that is compared with a number becomes an integer input.</dd>
+<dt>Parallelogram: output</dt>
+<dd><code>Output total</code> prints a variable or expression. Put literal text in quotes: <code>Output "Even"</code>. An unquoted single word such as <code>Output Even</code> is read as a variable name and blocks code generation.</dd>
+<dt>Diamond: decision</dt>
+<dd>A condition such as <code>n &gt; 0</code> or <code>n % 2 == 0</code>. A leading <code>if</code>, a trailing <code>?</code>, and question wording such as <code>is a &gt; b?</code> are accepted. Write equality as <code>==</code>; a lone <code>=</code> is read as equality only when nothing else makes sense.</dd>
+<dt>Hexagon: loop header</dt>
+<dd><code>WHILE count &lt;= 5</code> or <code>FOR i IN range(1, 11)</code>. A diamond that an arrow loops back to is also read as a <code>WHILE</code> loop.</dd>
 </dl>
-<p><strong>Accepted flowchart language:</strong> Modulo reads a structured subset of ISO 5807 notation. Use one single-page PNG, JPG/JPEG, SVG, or PDF with separate shapes, legible text, and visible arrowheads.</p>
-<p><strong>Notation rules:</strong> Terminals start and end the program; rectangles contain assignments or supported operations; parallelograms contain <code>Input name</code> or <code>Output expression</code>; diamonds contain conditions with <code>Yes</code>/<code>No</code> branches; hexagons contain <code>WHILE condition</code> or <code>FOR name IN expression</code>; and matching small circles may join distant connector paths.</p>
-<p><strong>Supported logic:</strong> Modulo accepts sequences, nested decisions, <code>WHILE</code>/<code>FOR</code> loops, assignments, arithmetic and comparisons, input/output, and the supported control statements <code>break</code>, <code>continue</code>, and <code>return</code>. Keep shapes non-overlapping and connect every path to an ending terminal.</p>
+<h3>Arrows and branches</h3>
+<ul>
+<li>Use solid straight or right-angled lines with one clearly visible, filled arrowhead at the target end. Each arrow must start and end on a shape outline.</li>
+<li>Every shape except a decision or loop header has exactly one outgoing arrow. Several arrows may join into one arrowhead before a shape.</li>
+<li>A decision or loop header has exactly two outgoing arrows, labeled <code>Yes</code> and <code>No</code> (<code>True</code>/<code>False</code> and <code>Y</code>/<code>N</code> also work). Place each label beside its arrow near the diamond, not on top of the line or arrowhead.</li>
+<li>For an if without an else, send the <code>No</code> arrow on to the next shape. Branches should rejoin before continuing or ending.</li>
+<li>For a loop, <code>Yes</code> enters the body and <code>No</code> leaves the loop. The last body shape arrows back into the loop header. A post-test (do-while) loop, with the body drawn before the diamond, is also supported.</li>
+<li>A loop must have a single exit: its header's <code>No</code> arrow. An arrow that leaves the loop body directly, or a second path out of the loop, is rejected as unstructured flow.</li>
+<li>Keep decisions out of loop bodies for now. A diamond inside a loop is currently misread as a second loop, so an if inside a loop does not convert reliably. Decisions before or after a loop work normally.</li>
+</ul>
+<h3>Layout and text</h3>
+<ul>
+<li>Dark lines and text on a light background. Filled colored shapes are fine if the text contrasts clearly.</li>
+<li>Keep shapes separate, avoid crossing arrows, and route arrows around shapes rather than close past them.</li>
+<li>Use a large, plain font and put spaces around operators (<code>i = i + 1</code>). Small or tightly spaced text is the most common cause of misread statements.</li>
+<li>Keep the page upright and sharp. Low-resolution, blurred, or rotated scans (more than about 1.5°) frequently lose arrows or labels. Photographs and hand-drawn diagrams are accepted but are less reliable.</li>
+</ul>
+<h3>Accepted but not yet verified</h3>
+<p>Matching small connector circles (for example two circles labeled <code>A</code>) and process boxes containing only <code>break</code>, <code>continue</code>, or <code>return</code> are parsed, but no reference diagram tests them yet. Prefer a direct arrow and a structured loop exit.</p>
+<p><strong>Reading the score:</strong> Excellent (90+) and Good (80+) mean recognition is reliable. Moderate (70+) means check the flagged elements. Low or Very Low means a blocking problem or an unreliable element; fix the flagged item or the diagram before relying on the result.</p>
 </dialog>
 <div id="shape-note" class="shape-note" hidden role="tooltip"></div>
 </body>

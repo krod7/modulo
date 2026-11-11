@@ -72,7 +72,7 @@ try {
     # 1 ---------------------------------------------------------------- app files
     Step 1 'Copying Modulo'
     New-Item -ItemType Directory -Force $AppDir | Out-Null
-    foreach ($item in 'backend', 'frontend', 'assets', 'samples', 'docs') {
+    foreach ($item in 'backend', 'frontend', 'assets', 'samples', 'accepted_flowcharts', 'docs') {
         $from = Join-Path $Source $item
         if (Test-Path $from) {
             $to = Join-Path $AppDir $item

@@ -2,6 +2,7 @@
 from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
+import json
 from threading import BoundedSemaphore
 import os
 import sys
@@ -20,6 +21,43 @@ from backend import pipeline
 from backend.services.intake_service import UploadError, inspect_upload
 
 ROOT = Path(__file__).resolve().parents[1]
+# Verified charts and the ordered "Try a Sample" rotation (see accepted_flowcharts/README.md).
+ACCEPTED_DIR = ROOT / "accepted_flowcharts"
+SAMPLE_ROTATION = ACCEPTED_DIR / "rotation.json"
+
+
+def sample_rotation(allowed: set[str]) -> list[tuple[str, Path]]:
+    """Return (URL path, file) pairs for the sample rotation, in display order.
+
+    The rotation manifest lists verified charts relative to ``accepted_flowcharts/``.
+    Entries that are missing, unsupported, or outside that folder are skipped. If the
+    manifest is absent or unreadable, every supported file in ``samples/`` is used,
+    which was the original behaviour.
+    """
+    try:
+        entries = json.loads(SAMPLE_ROTATION.read_text(encoding="utf-8"))["samples"]
+    except (OSError, ValueError, KeyError, TypeError):
+        entries = None
+    rotation = []
+    if isinstance(entries, list):
+        base = ACCEPTED_DIR.resolve()
+        for entry in entries:
+            relative = entry.get("path") if isinstance(entry, dict) else None
+            if not isinstance(relative, str):
+                continue
+            path = (ACCEPTED_DIR / relative).resolve()
+            if (base in path.parents and path.is_file()
+                    and path.suffix.lower().lstrip(".") in allowed):
+                rotation.append((f"/accepted/{path.relative_to(base).as_posix()}", path))
+    if rotation:
+        return rotation
+    legacy = sorted(
+        (path for path in (ROOT / "samples").iterdir()
+         if path.is_file() and path.suffix.lower().lstrip(".") in allowed),
+        key=lambda path: (path.stem.rstrip('0123456789'), int(''.join(ch for ch in path.stem if ch.isdigit()) or 0), path.suffix.lower()),
+    )
+    return [(f"/samples/{path.name}", path) for path in legacy]
+
 
 
 def create_app(settings: Settings | None = None) -> Flask:
@@ -63,18 +101,17 @@ def create_app(settings: Settings | None = None) -> Flask:
     def sample(filename):
         return send_from_directory(ROOT / "samples", filename)
 
+    @app.get("/accepted/<path:filename>")
+    def accepted_sample(filename):
+        return send_from_directory(ACCEPTED_DIR, filename)
+
     @app.get("/api/samples")
     def samples():
-        allowed = set(settings.ALLOWED_EXTENSIONS)
-        entries = sorted(
-            (path for path in (ROOT / "samples").iterdir()
-             if path.is_file() and path.suffix.lower().lstrip(".") in allowed),
-            key=lambda path: (path.stem.rstrip('0123456789'), int(''.join(ch for ch in path.stem if ch.isdigit()) or 0), path.suffix.lower()),
-        )
-        return jsonify(samples=[{"name": path.name, "url": f"/samples/{path.name}",
+        entries = sample_rotation(set(settings.ALLOWED_EXTENSIONS))
+        return jsonify(samples=[{"name": path.name, "url": url,
                                  "bytes": path.stat().st_size,
                                  "under_limit": path.stat().st_size <= settings.max_upload_bytes}
-                                for path in entries])
+                                for url, path in entries])
 
     @app.post("/api/analyze")
     def analyze():

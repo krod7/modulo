@@ -100,15 +100,19 @@ Because conversion is rule-based, Modulo can only translate what it has a rule f
 | Terminal | Rounded rectangle or oval | `Start` or `End` | Opens and closes the `main()` function |
 | Process | Rectangle | A statement such as `total = total + n`; the supported high-level command `Calculate factorial` (or `Calculate factorial of n`) | Ordinary statements are validated and emitted as written; factorial is lowered to a safe multiplication loop |
 | Data Input | Parallelogram | `Input n` or `Input n:int` | `n = input()` or `n = int(input())` |
-| Data Output | Parallelogram | `Output total` | `print(total)` |
+| Data Output | Parallelogram | `Output total` or `Output "Done"` | `print(total)` or `print('Done')` |
 | Decision | Diamond | A condition such as `n > 0` | `if n > 0:` ... `else:` |
-| Iteration | Hexagon | `WHILE <condition>` or `FOR <name> IN <expression>` | `while ...:` or `for ... in ...:` |
+| Iteration | Hexagon (or a Decision diamond that an arrow loops back to) | `WHILE <condition>` or `FOR <name> IN <expression>` | `while ...:` or `for ... in ...:` |
 | Connector | Small circle | A matching label (`A`, `B`, ...) | Nothing (it only joins parts of the graph) |
 | Flow arrow | Arrow | Optional label | Control flow between blocks |
 
 **Supported logic:** sequential execution, if/else (including nested), `while` and `for` loops, variable assignment, logical expressions, input/output, the explicit high-level process command `Calculate factorial` (with one input, or `Calculate factorial of n` when multiple inputs exist), and optional `break`, `continue`, and `return` (drawn as Process boxes containing only that word). When an untyped input is compared with a numeric literal, code generation infers an integer input unless the diagram explicitly annotates a type.
 
-**Edge labels:** every Decision and Iteration shape has exactly two outgoing arrows labeled `Yes` and `No` (also accepted: `True`/`False`, `Y`/`N`, in any letter case). For an Iteration, `Yes` enters the loop body and `No` leaves the loop.
+**Edge labels:** every Decision and Iteration shape has exactly two outgoing arrows labeled `Yes` and `No` (also accepted: `True`/`False`, `Y`/`N`, in any letter case). For an Iteration, `Yes` enters the loop body and `No` leaves the loop; that `No` arrow is the loop's only exit. A post-test (do-while) loop, with the body drawn before the diamond, is supported.
+
+**Output text:** put literal text in quotes (`Output "Even"`). A single unquoted word (`Output Even`) is read as a variable name, so code generation stops at an undefined variable.
+
+The in-app **Diagram Guide** presents these rules for users, along with the layout conventions that recognize most reliably; keep it in step with this section.
 
 **Statements and conditions** are limited to a small, safe language: names, numbers, strings, arithmetic, comparisons, `and`/`or`/`not`, and a short allowlist of built-ins (`print`, `input`, `int`, `float`, `str`, `len`, `range`, `abs`, `min`, `max`, `round`). The factorial command is a narrow, explicitly implemented exception to the expression grammar; unknown natural-language process text still produces a diagnostic rather than being passed into the output.
 
@@ -355,7 +359,8 @@ modulo/
 ├── assets/                         # icons used by the build and installers
 ├── .github/workflows/release.yml   # release build workflow
 │
-├── samples/                        # ten sample flowcharts for the one-click demo
+├── samples/                        # ten annotated sample charts (structural ground truth)
+├── accepted_flowcharts/            # verified charts and the Try a Sample rotation (rotation.json)
 ├── test_flowcharts/                # manual and stress-test charts (see 8.5)
 ├── tests/                          # automated tests and ground truth (see 8.4)
 │
@@ -428,6 +433,8 @@ modulo/
 | `fixtures/` | Flowchart images, expected outputs (`expected/`), the benchmark `manifest.json`, and `samples_ground_truth.json` (ground truth for the ten sample charts). |
 | `test_flowchart_benchmark.py` | Synthetic fixture suite with per-stage metrics (see [Testing](#13-testing)). |
 | `test_sample_flowcharts.py` | Structural scoring of the ten sample charts. |
+| `test_sample_rotation.py` | The Try a Sample rotation: manifest, API order, and (opt-in) end-to-end conversion of every rotation chart. |
+| `test_confidence_scale.py` | OCR-free tests of the confidence scale in Section 12.1. |
 | `test_connector_tracing.py` | OCR-free geometry tests for shapes, connectors, arrowheads, and labels. |
 | `test_graph_branch_recovery.py` | Branch-label and graph recovery. |
 | `test_logic_structuring.py` | Control-flow recovery from the graph into the IR. |
@@ -439,13 +446,14 @@ modulo/
 
 ### 8.5 Manual test charts (`test_flowcharts/`)
 
-Fifteen valid charts in each of five formats (`png`, `jpg`, `jpeg`, `pdf`, `svg`), four deliberately invalid charts in each format (missing End, decision missing a branch, orphan node, unlabeled branches), and nine stress variants (low resolution, noise and blur, 2-degree rotation) for charts 05, 08, and 15. `manifest.csv` describes each chart and `gen_flowcharts.py` regenerates them.
+Fifteen valid charts in each of five formats (`png`, `jpg`, `jpeg`, `pdf`, `svg`), four deliberately invalid charts in each format (missing End, decision missing a branch, orphan node, unlabeled branches), and nine stress variants (low resolution, noise and blur, 2-degree rotation) for charts 05, 08, and 15. `manifest.csv` describes each chart and `gen_flowcharts.py` regenerates them. Only charts 05 and 07 currently convert end to end; the reasons the others do not are recorded in [`accepted_flowcharts/README.md`](accepted_flowcharts/README.md).
 
 ### 8.6 Root files
 
 | File | Purpose |
 |---|---|
-| `samples/` | Ten example flowcharts users can try immediately. |
+| `samples/` | Ten annotated sample charts used by the structural ground-truth tests. |
+| `accepted_flowcharts/` | Copies of every chart verified to convert end to end, plus `rotation.json`, the ordered list of ten charts served by Try a Sample. |
 | `docs/RECOGNITION_FIXES.md` | Log of recognition changes and the tests that protect them. |
 | `pytest.ini` | Test configuration (import path and test folder). |
 | `requirements.txt` | Python dependencies. |
@@ -502,6 +510,8 @@ Rules that keep the layers clean:
 | `POST` | `/api/analyze` | Accepts the file (multipart form field `file`), runs Phase 1, returns an `AnalysisResponse`. |
 | `GET` | `/api/analysis/<analysis_id>/image` | Returns the normalized page image that all coordinates refer to (needed for PDFs, which the browser cannot overlay directly). |
 | `POST` | `/api/generate` | Accepts `{ "analysis_id": "..." }`, runs Phase 2, returns a `ConvertResponse`. |
+| `GET` | `/api/samples` | Lists the Try a Sample rotation in display order, from `accepted_flowcharts/rotation.json` (falls back to `samples/`). Each entry has `name`, `url`, `bytes`, and `under_limit`. |
+| `GET` | `/accepted/<path>` | Serves a chart from `accepted_flowcharts/`. |
 
 <!-- CONFIRM: if flagged-region corrections and pseudocode edits use their own endpoint (for example a revalidate route), add it to this table. -->
 
@@ -673,7 +683,42 @@ Recognition is the least deterministic part of Modulo: the same diagram can be r
 
 ### 12.1 Confidence score
 
-The interface reports three independently calculated components: **OCR Recognition (40%)**, **Shape Classification (20%)**, and **Connector & Graph Reconstruction (40%)**. The authoritative formula is `Overall = (OCR × 0.40) + (Shape × 0.20) + (Graph × 0.40)`. It also reports `Critical Component Confidence = min(OCR, Shape, Graph)` so a strong result in one component cannot conceal a weak component. Grades are Excellent (90–100), Good (80–89), Moderate (70–79), Low (50–69), and Very Low (0–49). Individual uncertain elements and component-level warnings remain visible on the flowchart and in the analysis notes.
+The interface reports three independently calculated components and an overall score, computed in `backend/services/confidence_service.py`:
+
+```
+Weighted = (OCR × 0.40) + (Shape × 0.10) + (Graph × 0.50)
+Critical = min(OCR, Shape, Graph)
+Overall  = min(Weighted, Critical + 10, 69 if any blocking error)
+```
+
+Grades are **Excellent** (90–100: recognition reliable), **Good** (80–89: reliable, quick review), **Moderate** (70–79: check the flagged elements), **Low** (50–69: a blocking problem or an unreliable element), and **Very Low** (0–49). When a cap applies, the score panel says which one.
+
+**Components.** Every component is element-normalized: a diagnostic lowers the score of the element it describes, not the whole chart by a fixed amount.
+
+| Component | Elements | Element score | Component score |
+|---|---|---|---|
+| OCR | Node text and branch labels | Tesseract confidence mapped linearly from 50% (0) to 90% (1), times (1 − diagnostic weights on that element) | ½ average + ½ weakest element |
+| Shape | Nodes | 1 if classified as a supported shape and not flagged, else 0 | ½ average + ½ weakest element |
+| Graph | Connectors | Share of connectors attached at both ends, times (1 − total connector-diagnostic weight ÷ connector count) | As computed |
+
+An error-level diagnostic removes an element's whole score and caps its component at 69. Warning weights reflect how often each warning accompanied a real misread: `PROGRAMMING_OCR_AMBIGUITY` 0.05, `LOW_OCR_CONFIDENCE` 0.35, `INFERRED_TERMINAL_DIRECTION` and `RESOLVED_CONNECTOR_AMBIGUITY` 0.05, `REDUNDANT_CONNECTOR_FRAGMENT` 0.10, `DANGLING_ARROW` 0.50, and other connector inferences (arrow direction, visible gaps, branch labels) 0.30.
+
+**Why this scale.** The previous scale (OCR 40%, Shape 20%, Graph 40%, a fixed 7 or 16 points per diagnostic) was checked against 52 recorded runs: the ten samples and the PNG, JPG, stress, and invalid charts in `test_flowcharts/`.
+
+| Outcome | Runs | Previous scale | This scale |
+|---|---|---|---|
+| Converted correctly end to end | 12 | 71–90; 1 Excellent, 7 Good, 4 Moderate | 76–98; 8 Excellent, 3 Good, 1 Moderate |
+| Reached pseudocode with a misread statement (charts 11 and 14) | 4 | 65–73; 2 Moderate, 2 Low | 52–75; 3 Low, 1 Moderate |
+| Blocked by an error-level diagnostic | 28 | 36–86; 5 Good, 13 Moderate | 10–69; 21 Low, 7 Very Low |
+
+The previous scale failed in three ways:
+- Failed analyses could be graded Good.
+- Correct charts lost points in proportion to their size, because `PROGRAMMING_OCR_AMBIGUITY` and `INFERRED_TERMINAL_DIRECTION` appear on nearly every chart. Sample 8 scored OCR 35 although every node was read correctly.
+- One misread node was averaged away.
+
+Connector and graph reconstruction caused 24 of the 28 blocking failures, so it carries half the weight. Shape classification was correct on every chart that reached the graph stage, so its weight is low; a shape failure still shows through the weakest-component cap.
+
+**Limits.** The score measures recognition confidence, not semantic correctness. A confidently misread statement can still score Moderate (one run above). Charts recognized exactly but written outside the notation (for example an unquoted single-word output) can score Excellent and then stop at code generation. Review the pseudocode before approving.
 
 ### 12.2 OCR preprocessing
 
@@ -703,7 +748,7 @@ python -m pip install pytest
 python -m pytest -q
 ```
 
-Last recorded fast-suite result: **29 passed, 11 skipped**. The 11 skipped tests are the opt-in full-pipeline benchmark cases.
+Last recorded fast-suite result (2026-11-10): **116 passed, 36 skipped**. The skipped tests are the opt-in OCR-dependent cases enabled by `FLOWCHART_RUN_PIPELINE=1`. With `FLOWCHART_RUN_PIPELINE=1` (Tesseract 5.3.4): **148 passed, 4 failed**. All four fail identically on the previous commit. Three come from the loop-promotion limitation in [Section 14](#14-known-limitations): samples 1 and 10, and the diamond loops in the generated unseen charts. The fourth needs `samples/countdown.png`, which is not in the repository.
 
 <!-- UPDATE before submitting: re-run the suite and replace the numbers above with the current result and the date. -->
 
@@ -739,6 +784,10 @@ python tests/evaluate_samples.py --ground-truth /tmp/unseen/ground_truth.json
 FLOWCHART_RUN_PIPELINE=1 python -m pytest tests/test_sample_flowcharts.py -q
 ```
 
+Last recorded result (2026-11-10): 8/10 samples structurally correct. Samples 2–9 pass. Sample 1 fails on two loop diamonds expected as decisions and promoted to iterations, and sample 10 fails with a missing edge and decisions inside a loop promoted to iterations (see [Known Limitations](#14-known-limitations)).
+
+`tests/test_sample_rotation.py` checks the Try a Sample rotation in `accepted_flowcharts/rotation.json`. With `FLOWCHART_RUN_PIPELINE=1`, it also checks that every rotation chart reaches pseudocode, scores at least Moderate, and generates Python that compiles.
+
 `tests/test_connector_tracing.py` covers the shape, connector, arrowhead, and label stages with OCR-free synthetic geometry and runs in the default fast suite. See [`docs/RECOGNITION_FIXES.md`](docs/RECOGNITION_FIXES.md) for the recognition changes these tests protect.
 
 ---
@@ -749,7 +798,9 @@ FLOWCHART_RUN_PIPELINE=1 python -m pytest tests/test_sample_flowcharts.py -q
 - **Pseudocode editing is partial.** Numeric values in pseudocode can be changed and reassessed, but conditionals and text outputs cannot yet be edited reliably. Pseudocode editing was not part of the original MVP.
 - **Photographs and sketches.** Accepted, but perspective, lighting, and handwriting lower recognition confidence.
 - **Recognition varies by environment.** OCR and shape results can differ between library versions; the Tesseract version is documented and dependencies are pinned.
-- **Structured flow only.** Diagrams that cannot be expressed as sequences, if/else, and loops are rejected with `UNSTRUCTURED_FLOW`.
+- **Structured flow only.** Diagrams that cannot be expressed as sequences, if/else, and loops are rejected with `UNSTRUCTURED_FLOW`. That includes a loop with a second exit from its body.
+- **Decisions inside loops.** `_promote_cycle_headers` in `validation_service.py` promotes any decision that can reach a loop header back to that header into a `WHILE` iteration. An if inside a loop body therefore becomes a nested loop. Test chart 09 (PNG) then exhausts the recursion limit in `LogicService`, and charts 10, 13, and 15 are rejected. Until this is fixed, the Diagram Guide asks users to keep decisions out of loop bodies.
+- **Unverified constructs.** On-page connector circles and `break`/`continue`/`return` process boxes are parsed and validated, but no reference diagram exercises them yet.
 - **No exception-handling symbol.** Error paths are supported only as ordinary decisions (see [Open Decisions](#16-open-decisions)).
 - **Single-user, local use.** The in-memory analysis store is not shared between processes.
 

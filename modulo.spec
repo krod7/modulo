@@ -7,6 +7,8 @@ from PyInstaller.utils.hooks import collect_all
 datas = [("frontend", "frontend"), ("assets", "assets")]
 if Path("samples").exists():
     datas.append(("samples", "samples"))
+if Path("accepted_flowcharts").exists():
+    datas.append(("accepted_flowcharts", "accepted_flowcharts"))
 if Path("vendor/tesseract").exists():
     datas.append(("vendor/tesseract", "tesseract"))
 

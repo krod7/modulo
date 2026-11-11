@@ -53,7 +53,7 @@ echo "=== Modulo installer ==="
 
 step 1 "Copying Modulo"
 mkdir -p "$APP"
-for item in backend frontend assets samples docs; do
+for item in backend frontend assets samples accepted_flowcharts docs; do
   [ -d "$SRC/$item" ] && { rm -rf "$APP/$item"; cp -R "$SRC/$item" "$APP/$item"; }
 done
 cp "$SRC/modulo_launcher.py" "$SRC/requirements.txt" "$APP/"

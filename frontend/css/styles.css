@@ -707,6 +707,22 @@ dialog dd {
   margin-left:0;
   color:var(--muted)
 }
+#guide-dialog {
+  max-height:calc(100vh - 48px);
+  overflow-y:auto
+}
+dialog h3 {
+  margin:20px 0 4px;
+  font-size:14px
+}
+dialog ul {
+  margin:6px 0;
+  padding-left:18px
+}
+dialog li {
+  font-size:13px;
+  margin:4px 0
+}
 code {
   font-family:ui-monospace,monospace
 }
