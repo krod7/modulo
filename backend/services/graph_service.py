@@ -753,6 +753,21 @@ def infer_high_confidence_missing_edges(context: PipelineContext, graph: FlowGra
     return inferred_count
 
 
+def _reaches_through_plain_steps(start_id: str, target_id: str, nodes: dict, graph: FlowGraph) -> bool:
+    """Whether a straight chain of single-exit, non-branching steps leads to target."""
+    current, seen = start_id, set()
+    while current not in seen:
+        if current == target_id:
+            return True
+        seen.add(current)
+        node = nodes.get(current)
+        following = [edge.target for edge in graph.edges if edge.source == current]
+        if node is None or node.type in {"decision", "iteration", "terminal"} or len(following) != 1:
+            return False
+        current = following[0]
+    return False
+
+
 def repair_semantic_loop_back_edges(context: PipelineContext, graph: FlowGraph) -> int:
     """Recover a lost loop-back from an unmistakable increment/update step."""
     nodes = {node.id: node for node in graph.nodes}
@@ -841,6 +856,11 @@ def repair_semantic_loop_back_edges(context: PipelineContext, graph: FlowGraph) 
         _, target = max(candidates, key=lambda item: (item[0], -item[1].bbox.y, item[1].id))
         existing = [edge for edge in graph.edges if edge.source == source.id]
         if any(edge.target == target.id for edge in existing):
+            continue
+        # The drawn arrow already continues to the inferred target through
+        # ordinary steps (for example ``passed = passed + 1`` -> ``i = i + 1`` ->
+        # loop condition): nothing was lost, so keep the recognized edge.
+        if any(_reaches_through_plain_steps(edge.target, target.id, nodes, graph) for edge in existing):
             continue
         for edge in existing:
             graph.edges.remove(edge)

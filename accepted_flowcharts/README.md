@@ -36,12 +36,12 @@ Recorded run of all 15 `test_flowcharts/` charts (PNG and JPG):
 
 | Chart | Result | Cause |
 |---|---|---|
-| 02, 03, 04 | Recognized exactly, but code generation fails | Chart text uses unquoted single-word outputs (`Output Adult`), read as an undefined variable. Quoting the text (`Output "Adult"`) is the documented notation. |
-| 11, 14 | Reach pseudocode, wrong statement | `i = i + 1` is read as `i=it+l` / `i=itl`; code generation then refuses the undefined name. |
+| 02, 03, 04 | Now convert (not yet added here) | Unquoted single-word outputs (`Output Adult`) are now printed as text with a review warning. |
+| 11, 14 | 11 now converts (not yet added here); 14 still misread | Low-confidence nodes are now re-read at 2x, which fixes `i = i + 1` in 11; 14 still reads `i=itl`. |
 | 01 | Blocked | One shape is classified as unsupported (`UNSUPPORTED_SHAPE`). |
 | 06, 08, 12 | Blocked | A connector's arrow direction is ambiguous or a node becomes unreachable. |
-| 09 | PNG crashes the logic stage (recursion), JPG blocked | An if inside a loop is promoted to a nested loop (see README Section 14). |
-| 10, 13, 15 | Blocked: unstructured flow | The loop has a second exit from its body, and the inner decision is promoted to a loop. |
+| 09 | PNG now converts (not yet added here); JPG blocked | JPG: a statement is misread. |
+| 10, 13, 15 | Blocked: unstructured flow | The loop has a second exit from its body (straight to End). |
 
 The invalid and stress charts are expected to be rejected and are not candidates.
 

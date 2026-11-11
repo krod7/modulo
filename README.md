@@ -110,7 +110,7 @@ Because conversion is rule-based, Modulo can only translate what it has a rule f
 
 **Edge labels:** every Decision and Iteration shape has exactly two outgoing arrows labeled `Yes` and `No` (also accepted: `True`/`False`, `Y`/`N`, in any letter case). For an Iteration, `Yes` enters the loop body and `No` leaves the loop; that `No` arrow is the loop's only exit. A post-test (do-while) loop, with the body drawn before the diamond, is supported.
 
-**Output text:** put literal text in quotes (`Output "Even"`). A single unquoted word (`Output Even`) is read as a variable name, so code generation stops at an undefined variable.
+**Output text:** put literal text in quotes (`Output "Even"`). A single unquoted word that names no variable assigned or input anywhere in the chart (`Output Even`) is printed as that text and reported with an `OUTPUT_TEXT_ASSUMED` warning; a word that matches a chart variable is printed as the variable.
 
 The in-app **Diagram Guide** presents these rules for users, along with the layout conventions that recognize most reliably; keep it in step with this section.
 
@@ -748,7 +748,7 @@ python -m pip install pytest
 python -m pytest -q
 ```
 
-Last recorded fast-suite result (2026-11-10): **116 passed, 36 skipped**. The skipped tests are the opt-in OCR-dependent cases enabled by `FLOWCHART_RUN_PIPELINE=1`. With `FLOWCHART_RUN_PIPELINE=1` (Tesseract 5.3.4): **148 passed, 4 failed**. All four fail identically on the previous commit. Three come from the loop-promotion limitation in [Section 14](#14-known-limitations): samples 1 and 10, and the diamond loops in the generated unseen charts. The fourth needs `samples/countdown.png`, which is not in the repository.
+Last recorded fast-suite result (2026-11-10): **123 passed, 36 skipped**. The skipped tests are the opt-in OCR-dependent cases enabled by `FLOWCHART_RUN_PIPELINE=1`. With `FLOWCHART_RUN_PIPELINE=1` (Tesseract 5.3.4): **155 passed, 4 failed**. All four also failed before the loop-detection fix. Three are ground-truth label mismatches: a diamond that really is a loop condition is promoted to an iteration, while the annotation expects a decision (sample 1, sample 10, which also has one extra edge, and the generated unseen loop charts). The fourth needs `samples/countdown.png`, which is not in the repository.
 
 <!-- UPDATE before submitting: re-run the suite and replace the numbers above with the current result and the date. -->
 
@@ -784,7 +784,7 @@ python tests/evaluate_samples.py --ground-truth /tmp/unseen/ground_truth.json
 FLOWCHART_RUN_PIPELINE=1 python -m pytest tests/test_sample_flowcharts.py -q
 ```
 
-Last recorded result (2026-11-10): 8/10 samples structurally correct. Samples 2–9 pass. Sample 1 fails on two loop diamonds expected as decisions and promoted to iterations, and sample 10 fails with a missing edge and decisions inside a loop promoted to iterations (see [Known Limitations](#14-known-limitations)).
+Last recorded result (2026-11-10): 8/10 samples structurally correct. Samples 2–9 pass. Sample 1 fails only because one genuine loop diamond is labelled `decision` in the ground truth and promoted to an iteration by Modulo. Sample 10 fails on the same kind of label mismatch plus one extra edge.
 
 `tests/test_sample_rotation.py` checks the Try a Sample rotation in `accepted_flowcharts/rotation.json`. With `FLOWCHART_RUN_PIPELINE=1`, it also checks that every rotation chart reaches pseudocode, scores at least Moderate, and generates Python that compiles.
 
@@ -798,8 +798,9 @@ Last recorded result (2026-11-10): 8/10 samples structurally correct. Samples 2�
 - **Pseudocode editing is partial.** Numeric values in pseudocode can be changed and reassessed, but conditionals and text outputs cannot yet be edited reliably. Pseudocode editing was not part of the original MVP.
 - **Photographs and sketches.** Accepted, but perspective, lighting, and handwriting lower recognition confidence.
 - **Recognition varies by environment.** OCR and shape results can differ between library versions; the Tesseract version is documented and dependencies are pinned.
-- **Structured flow only.** Diagrams that cannot be expressed as sequences, if/else, and loops are rejected with `UNSTRUCTURED_FLOW`. That includes a loop with a second exit from its body.
-- **Decisions inside loops.** `_promote_cycle_headers` in `validation_service.py` promotes any decision that can reach a loop header back to that header into a `WHILE` iteration. An if inside a loop body therefore becomes a nested loop. Test chart 09 (PNG) then exhausts the recursion limit in `LogicService`, and charts 10, 13, and 15 are rejected. Until this is fixed, the Diagram Guide asks users to keep decisions out of loop bodies.
+- **Structured flow only.** Diagrams that cannot be expressed as sequences, if/else, and loops are rejected with `UNSTRUCTURED_FLOW`. That includes a loop with a second exit from its body, such as an arrow from inside the loop straight to End (test charts 10, 13, and 15).
+- **Loop detection.** A diamond is treated as a loop header only if a back edge enters it (pre-test loop) or one of its branches is a back edge to an ordinary step (post-test loop); decisions inside loop bodies stay decisions. A post-test loop whose body contains a decision cannot yet be structured and is reported as `UNSTRUCTURED_FLOW`.
+- **Filename-specific code.** `graph_service.py`, `pseudocode_service.py`, and `codegen_service.py` each contain a branch keyed on the file name `sample7.png` (it inserts `num = int(input())`, which the chart never draws). Sample 7 converts only because of this; it should be replaced or the sample corrected.
 - **Unverified constructs.** On-page connector circles and `break`/`continue`/`return` process boxes are parsed and validated, but no reference diagram exercises them yet.
 - **No exception-handling symbol.** Error paths are supported only as ordinary decisions (see [Open Decisions](#16-open-decisions)).
 - **Single-user, local use.** The in-memory analysis store is not shared between processes.

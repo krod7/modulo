@@ -138,10 +138,37 @@ def _promote_cycle_headers(graph, directed, nodes) -> None:
             if current in seen:
                 continue
             seen.add(current)
-            if current != start_id and nodes[current].type in {"decision", "iteration"}:
+            # Another control shape on the way back owns that cycle (a pre-test
+            # header whose body starts with a decision is found by the dominator
+            # test below).
+            if nodes[current].type in {"decision", "iteration"}:
                 continue
             pending.extend(next_id for next_id in directed.successors(current) if next_id not in seen)
         return False
+
+    # A cycle merely passing through a decision does not make it a loop header:
+    # an if/else inside a loop body also lies on the loop's cycle. Use the
+    # standard natural-loop test instead (requires a known Start node):
+    #  * pre-test loop: the decision dominates one of its own predecessors,
+    #    i.e. a back edge enters it;
+    #  * post-test (do-while) loop: one of its branches is itself a back edge to
+    #    an ordinary step that dominates the decision.
+    idom = nx.immediate_dominators(directed, graph.start_id) if graph.start_id in directed else {}
+
+    def dominates(dominator, node_id):
+        current = node_id
+        while current in idom:
+            if current == dominator:
+                return True
+            if idom[current] == current:
+                return False
+            current = idom[current]
+        return False
+
+    def is_loop_header(node_id, successor):
+        if any(dominates(node_id, predecessor) for predecessor in directed.predecessors(node_id)):
+            return True
+        return nodes[successor].type not in {"decision", "iteration"} and dominates(successor, node_id)
 
     for node in graph.nodes:
         if node.type != "decision":
@@ -149,7 +176,7 @@ def _promote_cycle_headers(graph, directed, nodes) -> None:
         for edge in directed.out_edges(node.id):
             if edge[1] == node.id:
                 continue
-            if returns_without_nested_control(edge[1], node.id) or nx.has_path(directed, edge[1], node.id):
+            if returns_without_nested_control(edge[1], node.id) or is_loop_header(node.id, edge[1]):
                 text = (node.text or "").strip().rstrip("?").strip()
                 if not text.upper().startswith(("WHILE ", "FOR ")):
                     node.text = f"WHILE {text}"

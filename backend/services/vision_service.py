@@ -922,6 +922,10 @@ def select_ocr_candidate(candidates: list[tuple[str, list[OCRWord]]], shape_type
     return best_text, best_words, plausible
 
 
+# Mean word confidence below which a node is re-read at 2x (see read_best_words).
+LOW_CONFIDENCE_RETRY = 0.72
+
+
 def read_best_words(image: np.ndarray, context: PipelineContext, origin: tuple[int, int] = (0, 0),
                     shape_type: str = "unknown", return_candidates: bool = False):
     """Compare original and shape-aware preprocessing variants using Tesseract."""
@@ -969,6 +973,23 @@ def read_best_words(image: np.ndarray, context: PipelineContext, origin: tuple[i
                 max(1, round(box.width / 2.0)), max(1, round(box.height / 2.0)))
         candidates.append((text, words))
     text, words, plausible = select_ocr_candidate(candidates, shape_type)
+    # Preprocessing scales by crop size, not glyph size, so mid-sized text in a
+    # large box is read at 1x, where Tesseract tends to merge short arithmetic
+    # ("i = i + 1" -> "i=it+l1"). Only when the chosen reading is already low
+    # confidence, also read a 2x enlargement and let the same ranking decide.
+    if (shape_type != "connector" and words and image.shape[0] >= 24 and image.shape[1] >= 40
+            and sum(word.confidence for word in words) / len(words) < LOW_CONFIDENCE_RETRY):
+        gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        enlarged = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        for psm in page_modes:
+            retry_text, retry_words = read_words_safely(enlarged, context, psm, origin)
+            for word in retry_words:
+                box = word.bbox
+                word.bbox = BoundingBox(origin[0] + round((box.x - origin[0]) / 2.0),
+                                         origin[1] + round((box.y - origin[1]) / 2.0),
+                                         max(1, round(box.width / 2.0)), max(1, round(box.height / 2.0)))
+            candidates.append((retry_text, retry_words))
+        text, words, plausible = select_ocr_candidate(candidates, shape_type)
     return (text, words, plausible) if return_candidates else (text, words)
 
 

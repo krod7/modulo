@@ -3,7 +3,8 @@ from __future__ import annotations
 import ast
 import networkx as nx
 from backend.models import Edge, FlowGraph, IRNode, Node, PipelineContext
-from backend.notation import terminal_role, FOR, INPUT, normalize_condition, normalize_label
+from backend.notation import (terminal_role, DECLARE, FACTORIAL_COMMAND, FOR, INPUT, SAFE_BUILTINS,
+                               input_names, normalize_condition, normalize_label)
 from backend.services.validation_service import branch_terminal_outputs
 
 class LogicService:
@@ -43,6 +44,7 @@ class LogicService:
             context.diagnose("error", "UNSTRUCTURED_FLOW", "The graph cannot be structured from Start.", "Connect every path using sequences, decisions, and loops.", [graph.start_id])
             return context
         post = self._postdominators(reachable, set(graph.end_ids))
+        self._literal_outputs = _undefined_word_outputs(graph, context)
         emitted: set[str] = set()
         try:
             root_children = self._sequence(graph.start_id, None, nodes, outgoing, reachable, dominators, post, emitted, context, set())
@@ -55,6 +57,12 @@ class LogicService:
                 context.ir = None
         except StructureError as error:
             context.diagnose("error", "UNSTRUCTURED_FLOW", str(error), "Use sequences, two-way decisions, and single-entry loops; avoid jumps and crossing regions.", error.ids)
+            context.ir = None
+        except RecursionError:
+            # A loop shape the structurer cannot resolve (for example a post-test
+            # loop whose body contains a decision) must fail as a diagnostic, not
+            # crash the request.
+            context.diagnose("error", "UNSTRUCTURED_FLOW", "The loop structure could not be resolved into structured control flow.", "Use a pre-test loop: put the loop condition before the loop body.", [node.id for node in graph.nodes if node.type == "iteration"])
             context.ir = None
         return context
 
@@ -193,6 +201,12 @@ class LogicService:
                 nested = self._sequence(
                     cursor, header, nodes, outgoing, graph, dominators, post, emitted, context, {header}
                 )
+                # A branch that leaves the loop straight to End (an early exit) has
+                # no structured equivalent here; report it rather than emit a loop
+                # that silently ignores the exit.
+                exits = [item.source_ids[0] for item in _walk_ir(nested) if item.kind == "End" and item.source_ids]
+                if exits:
+                    raise StructureError("A loop body exits directly to End; leave the loop only through its condition's No branch.", [header, *exits])
                 result.extend(nested)
                 cursor = header
                 continue
@@ -217,9 +231,78 @@ class LogicService:
                 # The notation validator permits simple human-readable output
                 # labels; quote only the generated expression, not node.text.
                 expression = repr(expression)
+            else:
+                if node.id in getattr(self, "_literal_outputs", set()):
+                    expression = repr(expression)
             return IRNode("Output", [node.id], text=text, expression=expression)
         if node.type == "process": return IRNode("Process", [node.id], text=text)
         raise StructureError(f"Unsupported node {node.id} in structured flow.", [node.id])
+
+def _walk_ir(children):
+    for item in children:
+        yield item
+        yield from _walk_ir(item.children)
+        yield from _walk_ir(item.otherwise or [])
+
+
+def _defined_names(graph: FlowGraph) -> set[str]:
+    """Case-folded names the chart assigns: inputs, assignments, FOR variables, Declare, factorial."""
+    names: set[str] = set()
+    for node in graph.nodes:
+        text = (node.text or "").strip()
+        if node.type == "input":
+            match = INPUT.fullmatch(text)
+            if match:
+                names.update(name.casefold() for name in input_names(match.group(1)))
+        elif node.type == "iteration":
+            match = FOR.fullmatch(text)
+            if match:
+                names.add(match.group(1).casefold())
+        elif node.type == "process":
+            declared = DECLARE.fullmatch(text)
+            if declared:
+                names.update(name.casefold() for name in input_names(declared.group(1)))
+            elif FACTORIAL_COMMAND.fullmatch(text):
+                names.add("factorial")
+            else:
+                try:
+                    tree = ast.parse(text, mode="exec")
+                except (SyntaxError, ValueError, RecursionError):
+                    continue
+                names.update(item.id.casefold() for item in ast.walk(tree)
+                             if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Store))
+    return names
+
+
+def _undefined_word_outputs(graph: FlowGraph, context: PipelineContext) -> set[str]:
+    """Outputs such as ``Output Even`` whose single word names no variable in the chart.
+
+    Multi-word labels are already printed as text. A lone word parses as a variable
+    name, but if the chart never defines it, printing it could only fail, so it is
+    unambiguously the text itself. A review warning records the interpretation.
+    """
+    defined = _defined_names(graph)
+    literal = set()
+    for node in graph.nodes:
+        if node.type != "output":
+            continue
+        parts = (node.text or "").strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        try:
+            expression = ast.parse(parts[1].strip(), mode="eval").body
+        except (SyntaxError, ValueError, RecursionError):
+            continue
+        if (isinstance(expression, ast.Name) and expression.id.casefold() not in defined
+                and expression.id not in SAFE_BUILTINS):
+            literal.add(node.id)
+            context.diagnose(
+                "warning", "OUTPUT_TEXT_ASSUMED",
+                f"{node.id}: '{expression.id}' is not a variable in this flowchart, so it is printed as the text '{expression.id}'.",
+                f"If you meant text, writing Output \"{expression.id}\" removes this note; if you meant a variable, assign it before this output.",
+                [node.id])
+    return literal
+
 
 class StructureError(ValueError):
     def __init__(self, message, ids): super().__init__(message); self.ids=ids
